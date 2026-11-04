@@ -1,0 +1,1290 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pas à pas</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2E5B45">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EDF1EB; --surface:#FFFFFF; --ink:#1D2A23; --muted:#55665C; --line:#D2DBD4;
+  --herb:#2E5B45; --herb-ink:#FFFFFF; --saffron:#DE9C0C; --saffron-soft:#F6E2AE;
+  --alert:#B5380F; --alert-ink:#FFFFFF; --scrim:rgba(12,18,15,.45);
+  --f-body:'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --f-head:'Bricolage Grotesque', 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --f-mono:ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121814; --surface:#1B231E; --ink:#ECF1EC; --muted:#A0B1A6; --line:#2E3A33;
+    --herb:#80C09B; --herb-ink:#0E1912; --saffron:#F2B632; --saffron-soft:#3B3013;
+    --alert:#F07444; --alert-ink:#1C0D06; --scrim:rgba(0,0,0,.6);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121814; --surface:#1B231E; --ink:#ECF1EC; --muted:#A0B1A6; --line:#2E3A33;
+  --herb:#80C09B; --herb-ink:#0E1912; --saffron:#F2B632; --saffron-soft:#3B3013;
+  --alert:#F07444; --alert-ink:#1C0D06; --scrim:rgba(0,0,0,.6);
+  color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:18px;line-height:1.45;-webkit-text-size-adjust:100%}
+#app{max-width:640px;margin:0 auto;padding:20px 18px 130px}
+body[data-screen="cook"] #app{padding-bottom:170px}
+h1,h2,h3{font-family:var(--f-head);line-height:1.08;margin:0}
+p{margin:0}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--saffron);outline-offset:2px}
+.sp{flex:1}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:50px;padding:10px 18px;border-radius:14px;border:1.5px solid var(--line);background:var(--surface);cursor:pointer;font-weight:700;font-size:17px;text-align:center}
+.btn.primary{background:var(--herb);color:var(--herb-ink);border-color:var(--herb)}
+.btn.danger{color:var(--alert)}
+.btn.ghost{background:transparent;border-color:transparent;padding:8px 10px;min-height:44px}
+.btn.mini{min-height:42px;padding:6px 14px;font-size:15px;border-radius:11px}
+.btn[disabled]{opacity:.4;cursor:default}
+.iconbtn{width:44px;height:44px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);cursor:pointer;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700}
+.iconbtn[disabled]{opacity:.35;cursor:default}
+.hint{color:var(--muted);font-size:16px;margin:14px 0}
+.stack{display:flex;flex-direction:column;gap:10px}
+.row-btns{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.sec{font-size:21px;margin:36px 0 12px}
+.sub{font-size:21px;margin:26px 0 10px}
+
+/* Accueil */
+.hero{margin:18px 0 28px}
+.hero h1{font-size:clamp(52px,16vw,84px);font-weight:800;letter-spacing:-.025em;line-height:.92}
+.hero h1 span{display:block}
+.hero h1 span:nth-child(2){padding-left:.85em}
+.hero h1 span:nth-child(3){padding-left:1.7em}
+.hero p{color:var(--muted);margin-top:18px;font-size:19px}
+.choice{display:block;width:100%;text-align:left;padding:22px 20px;border-radius:22px;margin-bottom:14px;cursor:pointer;border:1.5px solid var(--line);background:var(--surface)}
+.choice.launch{background:var(--herb);color:var(--herb-ink);border-color:var(--herb)}
+.choice strong{display:block;font-family:var(--f-head);font-size:29px;font-weight:800;line-height:1.1}
+.choice span{display:block;margin-top:4px;font-size:16px;opacity:.85}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0;border-bottom:1.5px solid var(--line);cursor:pointer}
+.toggle input{width:26px;height:26px;accent-color:var(--herb);flex:none}
+
+/* Barres de titre */
+.topbar{display:flex;align-items:center;gap:6px;margin:-4px -8px 16px}
+.topbar h2{font-size:25px;flex:1}
+
+/* Liste */
+.search{width:100%;margin-bottom:14px}
+.rrow{display:flex;align-items:center;gap:4px;background:var(--surface);border:1.5px solid var(--line);border-radius:16px;margin-bottom:10px;padding-right:8px}
+.rrow .main{flex:1;text-align:left;background:none;border:none;padding:16px;cursor:pointer;min-height:68px}
+.rrow .main b{display:block;font-size:21px;line-height:1.2}
+.rrow .main small{display:block;color:var(--muted);font-size:15px;margin-top:3px}
+.empty{text-align:center;padding:40px 10px;color:var(--muted)}
+
+/* Champs */
+input,textarea{width:100%;font:inherit;font-size:17px;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:11px 12px}
+textarea{resize:vertical;min-height:64px;line-height:1.4}
+input.short{max-width:120px}
+.lbl{display:block;font-weight:700;font-size:15px;color:var(--muted);margin:16px 0 0}
+.lbl input,.lbl textarea{margin-top:6px;font-weight:400;color:var(--ink)}
+.tabs{display:flex;background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:4px;gap:4px}
+.tabs button{flex:1;border:none;background:none;border-radius:10px;min-height:44px;font-weight:700;cursor:pointer;font-size:16px}
+.tabs button[aria-pressed="true"]{background:var(--herb);color:var(--herb-ink)}
+.error{background:var(--saffron-soft);border-radius:12px;padding:12px 14px;margin:14px 0;font-size:16px}
+.ingrow,.noterow{display:flex;gap:8px;margin-bottom:8px;align-items:flex-start}
+.stepcard{border:1.5px solid var(--line);border-radius:18px;padding:14px;margin:14px 0;background:var(--surface)}
+.stepcard input,.stepcard textarea{background:var(--bg)}
+.sc-head{display:flex;align-items:center;gap:6px}
+.sc-head .num{font-family:var(--f-head);font-weight:800;font-size:22px;flex:1}
+.timeinputs{display:flex;gap:8px;align-items:center;margin-top:6px;color:var(--ink);font-weight:400}
+.timeinputs input{width:84px;margin:0}
+.reels{font-size:14px;color:var(--muted);margin-top:10px}
+.raw{font-family:var(--f-mono);font-size:15px;line-height:1.55;min-height:58vh;margin-top:14px}
+.savebar,.cookbar{position:fixed;left:0;right:0;bottom:0;z-index:10;background:var(--bg);border-top:1.5px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));display:flex;gap:10px;justify-content:center}
+.savebar .btn{flex:1;max-width:320px}
+
+/* Cuisson */
+.cook-top{display:flex;align-items:center;gap:8px;margin:-4px -8px 0}
+.mic{display:inline-flex;align-items:center;gap:8px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface);padding:6px 14px;min-height:42px;font-weight:700;font-size:15px;cursor:pointer}
+.mic .dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+.mic.on{border-color:var(--herb)}
+.mic.on .dot{background:var(--herb);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+.heard{font-size:15px;color:var(--muted);min-height:22px;margin-top:6px}
+.progress{height:6px;background:var(--line);border-radius:6px;margin:12px 0 20px;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--herb);border-radius:6px}
+.stepno{font-family:var(--f-head);font-weight:800;font-size:18px;color:var(--muted)}
+.instr{font-size:clamp(27px,7.4vw,38px);line-height:1.22;font-weight:700;margin:8px 0 18px;white-space:pre-line;font-family:var(--f-body)}
+h2.instr{font-family:var(--f-head);font-weight:800}
+.desc{font-size:19px;color:var(--muted);margin-bottom:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.chip{background:var(--surface);border:1.5px solid var(--line);border-radius:999px;padding:6px 13px;font-size:17px}
+.notebox{border-left:5px solid var(--saffron);background:var(--surface);padding:10px 14px;border-radius:0 12px 12px 0;margin:8px 0;font-size:19px}
+.inglist{padding-left:24px;font-size:21px;margin:0}
+.inglist li{margin:6px 0}
+.timer{display:flex;align-items:center;gap:18px;background:var(--surface);border:1.5px solid var(--line);border-radius:22px;padding:16px;margin:16px 0}
+.dial{position:relative;width:136px;height:136px;flex:none}
+.dial svg{width:100%;height:100%;transform:rotate(-90deg)}
+.dial .track{stroke:var(--line)}
+.dial .fill{stroke:var(--saffron);transition:stroke-dashoffset .25s linear}
+.dial .t{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--f-head);font-weight:800;font-size:31px;font-variant-numeric:tabular-nums}
+.timer.done .dial .fill{stroke:var(--alert)}
+.timer .tlabel{font-size:15px;color:var(--muted);margin-bottom:10px}
+.timer .ctl{display:flex;flex-wrap:wrap;gap:8px}
+.past{font-size:16px;color:var(--muted);margin-top:4px}
+.next{color:var(--muted);font-size:17px;margin-top:22px}
+.cookbar .done-btn{flex:1;max-width:440px;min-height:66px;font-size:23px;font-family:var(--f-head);font-weight:800;border-radius:18px}
+.cookbar .back-btn{min-width:66px;min-height:66px;font-size:24px;border-radius:18px}
+.alarm{position:fixed;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top,0px));z-index:20;max-width:616px;margin:0 auto;background:var(--alert);color:var(--alert-ink);border-radius:20px;padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 12px 32px rgba(0,0,0,.28)}
+.alarm b{font-family:var(--f-head);font-size:26px;line-height:1.1}
+.alarm .row2{display:flex;gap:8px}
+.alarm .btn{flex:1;background:var(--alert-ink);color:var(--alert);border:none}
+.notepanel{position:fixed;left:12px;right:12px;bottom:calc(104px + env(safe-area-inset-bottom,0px));z-index:15;max-width:616px;margin:0 auto;background:var(--surface);border:2px solid var(--saffron);border-radius:20px;padding:16px;box-shadow:0 10px 28px rgba(0,0,0,.18)}
+.notepanel b{font-family:var(--f-head);font-size:21px}
+.notepanel p{margin:8px 0;font-size:18px}
+.notepanel .muted{color:var(--muted);font-size:15px}
+.notepanel textarea{margin:8px 0}
+
+/* Portions et courses */
+.stepper{display:flex;align-items:center;gap:16px;margin:10px 0 6px}
+.stepper output{font-family:var(--f-head);font-weight:800;font-size:46px;min-width:2ch;text-align:center;font-variant-numeric:tabular-nums}
+.stepper .unit{color:var(--muted);font-size:16px}
+.iconbtn.big{width:58px;height:58px;font-size:28px;border-radius:16px}
+.porhint{color:var(--muted);font-size:16px}
+.totals{display:flex;justify-content:space-between;align-items:baseline;gap:12px;background:var(--surface);border:1.5px solid var(--line);border-radius:16px;padding:14px 16px;margin:16px 0 4px}
+.totals b{font-family:var(--f-head);font-size:26px;font-weight:800}
+.shoprow{background:var(--surface);border:1.5px solid var(--line);border-radius:16px;margin-bottom:10px;padding:12px 14px}
+.shoprow.on{border-color:var(--herb)}
+.pick{display:flex;gap:12px;align-items:center;cursor:pointer}
+.pick input,.shoplist input{width:24px;height:24px;accent-color:var(--herb);flex:none;margin:0;padding:0}
+.pick b{display:block;font-size:19px;line-height:1.25}
+.pick small{display:block;color:var(--muted);font-size:15px}
+.shoprow .stepper{margin:10px 0 2px 36px;gap:12px}
+.shoprow .stepper output{font-size:28px}
+.shoplist{list-style:none;padding:0;margin:0}
+.shoplist label{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1.5px solid var(--line);font-size:18px;cursor:pointer}
+.shoplist .off span{text-decoration:line-through;color:var(--muted)}
+
+/* Dictée, matériel */
+.withmic{display:flex;gap:8px;align-items:flex-start;margin-top:6px}
+.withmic input,.withmic textarea{margin:0}
+.iconbtn.rec{background:var(--alert);color:var(--alert-ink);border-color:var(--alert)}
+.btn svg,.iconbtn svg{flex:none}
+.chips .chiplab{font-size:14px;font-weight:700;color:var(--muted);align-self:center;margin-right:2px}
+.chip.tool{border-style:dashed}
+.matrow{margin:14px 0}
+.matname{display:block;font-weight:700;font-size:18px;margin-bottom:6px}
+.gaps{margin:8px 0 0;padding-left:20px;color:var(--muted);font-size:16px}
+.gaps li{margin:3px 0}
+
+/* Récap */
+.recap-h{font-size:clamp(44px,13vw,68px);font-weight:800;letter-spacing:-.02em;margin:22px 0 10px}
+.scroll{overflow-x:auto;margin:20px 0}
+table.recap{width:100%;border-collapse:collapse}
+.recap th,.recap td{padding:11px 6px;border-bottom:1.5px solid var(--line);text-align:left;font-size:16px;vertical-align:top}
+.recap th{color:var(--muted);font-weight:700}
+.recap .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.recap tfoot td{font-weight:700;border-bottom:none}
+
+/* Feuilles et messages */
+.backdrop{position:fixed;inset:0;background:var(--scrim);z-index:30;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:640px;border-radius:22px 22px 0 0;padding:22px 18px calc(18px + env(safe-area-inset-bottom,0px));max-height:88vh;overflow:auto}
+.sheet h3{font-size:23px;margin-bottom:8px}
+.sheet p{color:var(--muted);margin:6px 0}
+.sheet ul{padding-left:20px}
+.sheet .acts{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.sheet .raw{min-height:40vh;background:var(--bg)}
+.toast{position:fixed;left:50%;bottom:calc(100px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:11px 18px;border-radius:12px;z-index:40;font-size:16px;max-width:90vw;text-align:center}
+.toast[hidden]{display:none}
+@media (prefers-reduced-motion: reduce){.mic.on .dot{animation:none}.dial .fill{transition:none}}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div id="alarm-host"></div>
+<div id="note-host"></div>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const app = document.getElementById('app');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[’]/g, "'").toLowerCase().trim();
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
+
+/* ---------- Stockage local (un texte à marqueurs par recette) ---------- */
+const KEY = 'pasapas:recettes', SKEY = 'pasapas:reglages';
+function load(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+function store(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+/* ---------- Durées ---------- */
+function parseDuration(v){
+  const s = norm(v).replace(/,/g, '.');
+  if (!s) return null;
+  const re = /(\d+(?:\.\d+)?)\s*(heures?|h|minutes?|min|mn|m|secondes?|sec|s)?/g;
+  let total = 0, prev = null, found = false, m;
+  while ((m = re.exec(s))) {
+    found = true;
+    const n = parseFloat(m[1]);
+    let u = m[2] || (prev === 'h' ? 'min' : prev === 'min' ? 's' : 'min');
+    if (u.startsWith('h')) { total += n * 3600; prev = 'h'; }
+    else if (u.startsWith('s')) { total += n; prev = 's'; }
+    else { total += n * 60; prev = 'min'; }
+  }
+  return found ? Math.round(total) : null;
+}
+function fmtDur(sec){
+  if (sec == null) return '';
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60, p = [];
+  if (h) p.push(`${h} h`);
+  if (m) p.push(`${m} min`);
+  if (s || !p.length) p.push(`${s} s`);
+  return p.join(' ');
+}
+function fmtClock(sec){
+  sec = Math.max(0, Math.ceil(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60, two = x => String(x).padStart(2, '0');
+  return h ? `${h}:${two(m)}:${two(s)}` : `${two(m)}:${two(s)}`;
+}
+function fmtSpeech(sec){
+  sec = Math.max(0, Math.ceil(sec));
+  const m = Math.floor(sec / 60), s = sec % 60, p = [];
+  if (m) p.push(plural(m, 'minute'));
+  if (s || !p.length) p.push(plural(s, 'seconde'));
+  return p.join(' et ');
+}
+
+/* ---------- Quantités ---------- */
+const UNITS = { g:['g',1], gr:['g',1], grammes:['g',1], kg:['g',1000], mg:['g',.001], l:['ml',1000], litre:['ml',1000], litres:['ml',1000], dl:['ml',100], cl:['ml',10], ml:['ml',1] };
+const FRAC = { '½':.5, '¼':.25, '¾':.75, '⅓':1/3, '⅔':2/3 };
+function splitQty(txt){
+  const m = String(txt).trim().match(/^(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+)?|[½¼¾⅓⅔])\s*(.*)$/);
+  if (!m) return null;
+  const a = m[1]; let q;
+  if (FRAC[a]) q = FRAC[a];
+  else if (a.includes('/')) { const [x, y] = a.split('/').map(v => parseFloat(v.replace(',', '.'))); q = y ? x / y : x; }
+  else q = parseFloat(a.replace(',', '.'));
+  let rest = m[2], unit = '';
+  const um = rest.match(/^([a-zA-Zéè]+)\.?(?=\s|$)\s*(.*)$/);
+  if (um && UNITS[um[1].toLowerCase()]) { unit = um[1]; rest = um[2]; }
+  return { q, unit, rest };
+}
+function fmtQty(n){ const r = n >= 10 ? Math.round(n) : Math.round(n * 10) / 10; return String(r).replace('.', ','); }
+function scaleIngr(txt, f){
+  if (f === 1) return txt;
+  const p = splitQty(txt); if (!p) return txt;
+  return `${fmtQty(p.q * f)}${p.unit ? ' ' + p.unit : ''} ${p.rest}`.trim();
+}
+function shopItem(txt, f){
+  const p = splitQty(txt);
+  if (!p) return { key:'x|' + norm(txt), name:cap(String(txt).trim()), q:null, base:'' };
+  const name = p.rest.replace(/^(de |des |d'|d’)/i, '').trim();
+  let base = '', q = p.q * f;
+  if (p.unit) { const [b, mul] = UNITS[p.unit.toLowerCase()]; base = b; q *= mul; }
+  return { key:base + '|' + norm(name), name:cap(name), q, base };
+}
+function fmtShopQty(q, base){
+  if (base === 'g') return q >= 1000 ? `${fmtQty(q / 1000)} kg` : `${fmtQty(q)} g`;
+  if (base === 'ml') return q >= 1000 ? `${fmtQty(q / 1000)} l` : q >= 100 ? `${fmtQty(q / 10)} cl` : `${fmtQty(q)} ml`;
+  return fmtQty(q);
+}
+
+/* ---------- Format texte à marqueurs ---------- */
+const MARKERS = { 'recette':1, 'description':1, 'portions':1, 'ingredient':1, 'ingredients':1, 'etape':1, 'temps':1, 'temps reel':1, 'temps reels':1, 'note':1, 'materiel':1, 'ecart materiel':1, 'ecart':1 };
+function parse(text, opts = {}){
+  const lines = String(text).replace(/\r/g, '').split('\n');
+  const r = { titre:'', description:'', portions:null, ingredients:[], materiel:[], etapes:[], ecarts:[] };
+  let cur = null, last = null;
+  const append = (val) => {
+    if (!last) return false;
+    if (last.arr) last.arr[last.i] = (last.arr[last.i] ? last.arr[last.i] + '\n' : '') + val;
+    else last.o[last.f] = (last.o[last.f] ? last.o[last.f] + '\n' : '') + val;
+    return true;
+  };
+  lines.forEach((line, idx) => {
+    const ln = idx + 1;
+    if (!line.trim()) return;
+    const m = line.match(/^\s*([^:]{2,24}?)\s*:\s?(.*)$/);
+    const k = m ? norm(m[1]) : '';
+    if (!m || !MARKERS[k]) { append(line.trim()); return; }
+    const v = m[2].trim();
+    if (k === 'recette') { r.titre = v; last = { o:r, f:'titre' }; }
+    else if (k === 'description') { r.description = v; last = { o:r, f:'description' }; }
+    else if (k === 'portions') { r.portions = parseInt(v, 10) || null; last = null; }
+    else if (k === 'ingredient' || k === 'ingredients') {
+      const arr = cur ? cur.ingredients : r.ingredients;
+      arr.push(v); last = { arr, i: arr.length - 1 };
+    }
+    else if (k === 'etape') {
+      cur = { instruction:v, temps:null, tempsReels:[], ingredients:[], materiel:[], notes:[] };
+      r.etapes.push(cur); last = { o:cur, f:'instruction' };
+    }
+    else if (k === 'temps') {
+      if (!cur) { last = null; return; }
+      if (v) { const d = parseDuration(v); if (d == null) throw new Error(`Ligne ${ln} : durée illisible (« ${v} »). Exemple attendu : 5 min, 1 h 30 ou 45 s.`); cur.temps = d || null; }
+      last = null;
+    }
+    else if (k.startsWith('temps reel')) {
+      if (cur) cur.tempsReels = v.split(/[,;]/).map(parseDuration).filter(x => x != null).slice(0, 5);
+      last = null;
+    }
+    else if (k === 'materiel') {
+      const arr = cur ? cur.materiel : r.materiel;
+      arr.push(v); last = { arr, i: arr.length - 1 };
+    }
+    else if (k.startsWith('ecart')) {
+      const em = v.match(/^(.+?),\s*(.+?)\s*:\s*([+\-−]?)\s*(.+?)\s+sur\s+(\d+)\s+fois\s*$/i);
+      if (em) { const d = parseDuration(em[4]) || 0; r.ecarts.push({ item:em[1].trim(), variant:em[2].trim(), avg:/[-−]/.test(em[3]) ? -d : d, n:+em[5] }); }
+      last = null;
+    }
+    else if (k === 'note') {
+      if (!cur) { last = null; return; }
+      cur.notes.push(v); last = { arr:cur.notes, i:cur.notes.length - 1 };
+    }
+  });
+  if (!opts.lenient) {
+    if (!r.titre) throw new Error('Il manque la ligne « Recette : » avec le nom de la recette.');
+    if (!r.etapes.length) throw new Error('Il faut au moins une ligne « Étape : ».');
+  }
+  return { recipe:r };
+}
+function serialize(r){
+  const out = [], multi = (marker, text) => { const ls = String(text).split('\n'); out.push(`${marker} : ${ls[0]}`); ls.slice(1).forEach(l => out.push(l)); };
+  multi('Recette', r.titre || '');
+  if (r.description) multi('Description', r.description);
+  if (r.portions) out.push(`Portions : ${r.portions}`);
+  const gi = (r.ingredients || []).filter(x => x && x.trim());
+  if (gi.length) { out.push(''); gi.forEach(x => out.push(`Ingrédient : ${x}`)); }
+  const gmat = (r.materiel || []).filter(x => x && x.trim());
+  if (gmat.length) { out.push(''); gmat.forEach(x => out.push(`Matériel : ${x}`)); }
+  (r.etapes || []).forEach(e => {
+    out.push('');
+    multi('Étape', e.instruction || '');
+    (e.ingredients || []).filter(x => x && x.trim()).forEach(x => out.push(`Ingrédient : ${x}`));
+    (e.materiel || []).filter(x => x && x.trim()).forEach(x => out.push(`Matériel : ${x}`));
+    if (e.temps) out.push(`Temps : ${fmtDur(e.temps)}`);
+    if (e.tempsReels && e.tempsReels.length) out.push(`Temps réel : ${e.tempsReels.map(fmtDur).join(', ')}`);
+    (e.notes || []).filter(x => x && x.trim()).forEach(x => multi('Note', x));
+  });
+  if (r.ecarts && r.ecarts.length) { out.push(''); r.ecarts.forEach(e => out.push(`Écart matériel : ${e.item}, ${e.variant} : ${e.avg < 0 ? '-' : '+'}${fmtDur(Math.abs(Math.round(e.avg)))} sur ${e.n} fois`)); }
+  return out.join('\n') + '\n';
+}
+const STOP = new Set(['de','des','du','la','le','les','un','une','au','aux','et','en','pour','avec','sans','gros','petit','petite','petits','grand','grande','frais','fraiche','temperature','ambiante','paris','tranche','tranches','pincee','morceau','morceaux']);
+const stem = w => w.replace(/(s|x)$/, '');
+const words = t => norm(t).replace(/[^a-z0-9œæ' ]/g, ' ').split(/[\s']+/).filter(Boolean);
+function stepIngr(r, st){
+  if (st.ingredients.length) return st.ingredients;
+  const inStep = new Set(words(st.instruction).map(stem));
+  return r.ingredients.filter(x => words(shopItem(x, 1).name).filter(w => w.length >= 3 && !STOP.has(w)).some(w => inStep.has(stem(w))));
+}
+const allIngr = r => { const seen = new Set(), out = []; [...r.ingredients, ...r.etapes.flatMap(e => e.ingredients)].forEach(x => { const t = (x || '').trim(); if (t && !seen.has(norm(t))) { seen.add(norm(t)); out.push(t); } }); return out; };
+function stepMat(r, st){
+  if (st.materiel && st.materiel.length) return st.materiel;
+  const inStep = new Set(words(st.instruction).map(stem));
+  return (r.materiel || []).filter(x => words(x).filter(w => w.length >= 3 && !STOP.has(w)).some(w => inStep.has(stem(w))));
+}
+const allMat = r => { const seen = new Set(), out = []; [...(r.materiel || []), ...r.etapes.flatMap(e => e.materiel || [])].forEach(x => { const t = (x || '').trim(); if (t && !seen.has(norm(t))) { seen.add(norm(t)); out.push(t); } }); return out; };
+function gapText(s){ const a = Math.abs(Math.round(s)); if (a < 5) return 'même temps que prévu'; return s < 0 ? `gain de ${fmtDur(a)}` : `perte de ${fmtDur(a)}`; }
+const MKEY = 'pasapas:materiel';
+const estTotal = r => r.etapes.reduce((a, e) => a + (e.temps || 0), 0);
+const firstWords = (t, n) => { const w = String(t).replace(/\s+/g, ' ').trim().split(' '); return w.length > n ? w.slice(0, n).join(' ') + '…' : w.join(' '); };
+const fileName = r => (String(r.titre).replace(/[\\/:*?"<>|]/g, '-').trim() || 'recette') + '.recette.txt';
+
+const TEMPLATE = `Recette : Nom de la recette
+Description : Une phrase pour la présenter.
+Portions : 4
+
+Ingrédient : 200 g de …
+Ingrédient : …
+
+Matériel : Casserole
+
+Étape : Ce qu’il faut faire.
+Temps : 5 min
+Note : Une astuce pour la prochaine fois.
+
+Étape : L’étape suivante.
+Temps : 10 min
+`;
+const SEED = [
+`Recette : Essai rapide du minuteur
+Description : Deux étapes courtes pour tester l’alerte et les commandes vocales.
+Portions : 1
+
+Ingrédient : Un verre d’eau
+
+Étape : Pose le téléphone à un mètre et dis « lance le minuteur ».
+Temps : 10 s
+
+Étape : Dis « ajoute une minute », puis « combien de temps », puis « étape terminée ».
+Temps : 20 s
+Note : Tu peux aussi dire « note » pour dicter une annotation.
+`,
+`Recette : Risotto aux champignons
+Description : Version simple du dimanche.
+Portions : 4
+
+Ingrédient : 320 g de riz arborio
+Ingrédient : 300 g de champignons de Paris
+Ingrédient : 1 l de bouillon de légumes
+
+Matériel : Sauteuse
+Matériel : Louche
+
+Étape : Faire dorer les champignons émincés à feu vif.
+Temps : 5 min
+Temps réel : 6 min 10 s, 5 min 40 s, 5 min 55 s
+Note : Ne pas saler trop tôt, attendre la fin de cuisson.
+
+Étape : Ajouter le riz et le nacrer en remuant.
+Temps : 2 min
+Temps réel : 2 min 30 s, 2 min 15 s
+
+Étape : Verser le bouillon louche par louche en remuant,
+jusqu’à ce que le riz soit crémeux.
+Temps : 18 min
+`,
+`Recette : Œufs mollets
+Description : Blanc pris, jaune coulant.
+Portions : 2
+
+Ingrédient : 4 œufs à température ambiante
+Ingrédient : Gros sel
+
+Matériel : Casserole
+Matériel : Écumoire
+
+Étape : Porter une casserole d’eau à ébullition avec une pincée de gros sel.
+Temps : 8 min
+
+Étape : Plonger délicatement les œufs dans l’eau bouillante.
+Temps : 6 min
+
+Étape : Les transférer dans un bol d’eau glacée.
+Temps : 2 min
+
+Étape : Les écaler doucement sous un filet d’eau froide.
+`];
+
+/* ---------- État ---------- */
+const S = {
+  recipes: [],
+  settings: Object.assign({ lire:true, autoMinuteur:false, lireNotes:false }, load(SKEY, {})),
+  screen:'home', q:'', draft:null, tab:'form', editErr:'', from:'home', cook:null, shop:{ sel:{}, skip:{} }, shopText:''
+};
+function persist(){ store(KEY, S.recipes.map(r => ({ id:r.id, texte:serialize(r) }))); }
+function loadRecipes(){
+  const raw = load(KEY, null);
+  const list = Array.isArray(raw) ? raw : SEED.map(t => ({ id:uid(), texte:t }));
+  S.recipes = [];
+  list.forEach(f => { try { const { recipe } = parse(f.texte); recipe.id = f.id || uid(); S.recipes.push(recipe); } catch (e) {} });
+  if (!Array.isArray(raw)) persist();
+}
+const find = id => S.recipes.find(r => r.id === id);
+function uniqueTitle(t){ let n = 2, x = t; while (S.recipes.some(r => norm(r.titre) === norm(x))) x = `${t} (${n++})`; return x; }
+
+/* ---------- Son, voix, écran ---------- */
+let AC = null;
+function ensureAudio(){ try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume(); } catch (e) {} }
+function beep(f = 880, d = .16, v = .28){
+  if (!AC) return;
+  try {
+    const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
+    o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+    o.connect(g).connect(AC.destination); o.start(t); o.stop(t + d + .05);
+  } catch (e) {}
+}
+const ack = () => beep(1320, .07, .1);
+
+const TTS = 'speechSynthesis' in window;
+let speaking = false, speakUntil = 0, frVoice = null;
+function pickVoice(){ const vs = speechSynthesis.getVoices(); frVoice = vs.find(v => /^fr[-_]FR/i.test(v.lang)) || vs.find(v => /^fr/i.test(v.lang)) || null; }
+if (TTS) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+function say(text, force){
+  if (!TTS || (!force && !S.settings.lire)) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'fr-FR'; if (frVoice) u.voice = frVoice;
+    u.onstart = () => { speaking = true; };
+    u.onend = u.onerror = () => { speaking = false; };
+    speaking = true; speakUntil = Date.now() + text.length * 75 + 2000;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+const isSpeaking = () => speaking && Date.now() < speakUntil;
+function hush(){ if (TTS) speechSynthesis.cancel(); speaking = false; }
+
+let WL = null, wantWake = false;
+async function keepAwake(on){
+  wantWake = on;
+  try {
+    if (on && 'wakeLock' in navigator) WL = await navigator.wakeLock.request('screen');
+    else if (!on && WL) { await WL.release(); WL = null; }
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && wantWake) keepAwake(true); });
+
+/* ---------- Reconnaissance vocale ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const V = { on:false, rec:null, state: SR ? 'off' : 'unsupported' };
+function startVoice(){
+  if (!SR) return;
+  if (V.rec) { try { V.rec.abort(); } catch (e) {} }
+  const rec = new SR();
+  rec.lang = 'fr-FR'; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 1;
+  rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) heard(e.results[i][0].transcript); };
+  rec.onerror = e => { if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e.error)) { V.on = false; V.state = 'denied'; updMic(); } };
+  rec.onend = () => { if (V.on && V.rec === rec) setTimeout(() => { if (V.on && V.rec === rec) { try { rec.start(); } catch (e) {} } }, 300); };
+  V.rec = rec; V.on = true; V.state = 'on';
+  try { rec.start(); } catch (e) {}
+  updMic();
+}
+function stopVoice(){
+  V.on = false;
+  if (SR && V.state !== 'denied') V.state = 'off';
+  if (V.rec) { try { V.rec.abort(); } catch (e) {} V.rec = null; }
+  updMic();
+}
+const micLabel = () => ({ on:'Micro actif', off:'Micro coupé', denied:'Micro refusé', unsupported:'Voix indisponible' })[V.state];
+function updMic(){ const b = $('#mic'); if (!b) return; b.classList.toggle('on', V.state === 'on'); $('#mic-l').textContent = micLabel(); }
+function setHeard(raw, miss){ const el = $('#heard'); if (el) el.textContent = miss ? `« ${raw} » : je n’ai pas compris cette commande.` : `« ${raw} »`; }
+
+function heard(raw){
+  const c = S.cook; if (!c || S.screen !== 'cook') return;
+  const n = norm(raw); if (!n) return;
+  setHeard(raw);
+  if (c.note && c.note.mode === 'listen') {
+    const stop = /fin de (la )?note/.test(n);
+    const part = raw.replace(/fin de (la )?note.*$/i, '').trim();
+    if (part) c.note.text = (c.note.text + ' ' + part).trim();
+    if (stop) return endNoteListen();
+    renderNote(); armNoteSilence(); return;
+  }
+  if (c.note && c.note.mode === 'review') {
+    if (/\b(ok|oui|garde|valide)\b/.test(n)) { ack(); return keepNote(); }
+    if (/annul|supprim|efface/.test(n)) { ack(); return cancelNote(); }
+  }
+  if (c.confirmEnd && Date.now() < c.confirmEnd) {
+    if (/\boui\b/.test(n)) { c.confirmEnd = 0; ack(); return endCook(); }
+    if (/\bnon\b/.test(n)) { c.confirmEnd = 0; return say('D’accord, on continue.', true); }
+  }
+  if (c.alarm && /\b(stop|ok|arrete|arreter|c'est bon)\b/.test(n)) { ack(); return stopAlarm(); }
+  if (isSpeaking()) {
+    if (/etape termin/.test(n)) { hush(); ack(); return finishStep(); }
+    if (/\bstop\b|silence|tais-toi/.test(n)) { hush(); ack(); }
+    return;
+  }
+  if (c.i < 0) {
+    const pm = n.match(/(\d+)\s*(portion|personne|part)/);
+    if (pm) { ack(); setPortions(+pm[1]); const est = Math.round(estTotal(c.r) * c.f); return say(`${plural(c.portions, 'portion')}.${est ? ` Temps total estimé : ${fmtSpeech(est)}.` : ''}`, true); }
+  }
+  if (c.i < 0 && /commenc|c'est parti|etape termin/.test(n)) { ack(); return goStep(0); }
+  const cmds = [
+    [/termine(r)? la recette|fin de la recette/, () => { c.confirmEnd = Date.now() + 8000; say('Terminer la recette ? Dis oui pour confirmer.', true); }],
+    [/etape termin|etape finie/, finishStep],
+    [/precedent|retour|etape d'avant/, prevStep],
+    [/repete|relis|redis/, repeatStep],
+    [/combien de temps|temps restant|il reste combien/, sayRemaining],
+    [/ajoute une minute|une minute de plus|plus une minute/, tAdd],
+    [/lance le minuteur|lance le chrono|demarre|\btop\b/, () => tStart()],
+    [/reprend/, () => tStart()],
+    [/\bpause\b/, tPause],
+    [/mes notes|les notes|lis la note/, readNotes],
+    [/^note\b|prends une note|ajoute une note|nouvelle note/, startNote],
+    [/ingredient/, readIngredients],
+  ];
+  for (const [re, fn] of cmds) if (re.test(n)) { ack(); fn(); return; }
+  setHeard(raw, true);
+}
+
+/* ---------- Mode cuisson ---------- */
+function startCook(id){
+  const r = find(id); if (!r) return;
+  ensureAudio();
+  const base = r.portions || 1;
+  S.cook = { rid:id, r, i:-1, t:null, stepStart:0, results:[], alarm:false, note:null, confirmEnd:0, base, portions:base, f:1, mats:allMat(r), mat:{}, matRes:[] };
+  const gmv = load(MKEY, {}); S.cook.mats.forEach(m => { S.cook.mat[m] = gmv[norm(m)] || ''; });
+  S.screen = 'cook'; render(); window.scrollTo(0, 0);
+  keepAwake(true);
+  if (SR && V.state !== 'denied') startVoice();
+  say(`${r.titre}. Pour combien de portions ? Dis par exemple « 6 portions », puis « commencer ».`);
+}
+function setPortions(n){
+  const c = S.cook; if (!c) return;
+  c.portions = Math.max(1, Math.min(50, n)); c.f = c.portions / c.base;
+  if (S.screen === 'cook' && c.i < 0) render();
+}
+function goStep(i){
+  const c = S.cook; stopAlarm(); cancelNote(true);
+  c.i = i; const st = c.r.etapes[i];
+  const tt = st.temps ? Math.max(1, Math.round(st.temps * c.f)) : 0;
+  c.t = tt ? { base:tt, total:tt, remaining:tt, endAt:0, running:false, done:false } : null;
+  c.stepStart = Date.now();
+  render(); window.scrollTo(0, 0);
+  let text = `Étape ${i + 1}. ${st.instruction}`;
+  if (S.settings.lireNotes && st.notes.length) text += `. Note : ${st.notes.join('. ')}`;
+  say(text);
+  if (c.t && S.settings.autoMinuteur) tStart();
+}
+function finishStep(){
+  const c = S.cook; if (!c) return;
+  if (c.i < 0) return goStep(0);
+  const st = c.r.etapes[c.i], d = Math.max(1, Math.round((Date.now() - c.stepStart) / 1000));
+  st.tempsReels = [d, ...st.tempsReels].slice(0, 5);
+  c.results[c.i] = d; persist();
+  if (c.i >= c.r.etapes.length - 1) return endCook();
+  goStep(c.i + 1);
+}
+function prevStep(){
+  const c = S.cook; if (!c) return;
+  if (c.i <= 0) { stopAlarm(); c.i = -1; c.t = null; render(); return; }
+  goStep(c.i - 1);
+}
+function endCook(){
+  const c = S.cook; stopAlarm(); cancelNote(true); stopVoice(); keepAwake(false);
+  c.t = null; c.matRes = recordMat(); S.screen = 'recap'; render(); window.scrollTo(0, 0);
+  say('Recette terminée. Bon appétit !');
+}
+function recordMat(){
+  const c = S.cook, r = c.r;
+  if (!c.mats || !c.mats.length || !c.results.some(Boolean)) return [];
+  const gmv = load(MKEY, {}), out = [];
+  c.mats.forEach(m => {
+    const v = (c.mat[m] || '').trim(); if (!v) return;
+    gmv[norm(m)] = v;
+    let idx = r.etapes.map((_, i) => i).filter(i => stepMat(r, r.etapes[i]).some(x => norm(x) === norm(m)));
+    if (!idx.length) idx = r.etapes.map((_, i) => i);
+    let gap = 0, cnt = 0;
+    idx.forEach(i => { const st = r.etapes[i]; if (c.results[i] && st.temps) { gap += c.results[i] - Math.max(1, Math.round(st.temps * c.f)); cnt++; } });
+    if (!cnt) return;
+    let e = r.ecarts.find(x => norm(x.item) === norm(m) && norm(x.variant) === norm(v));
+    if (!e) { e = { item:m, variant:v, avg:0, n:0 }; r.ecarts.push(e); }
+    e.avg = (e.avg * e.n + gap) / (e.n + 1); e.n++;
+    out.push({ m, v, gap });
+  });
+  store(MKEY, gmv); persist();
+  return out;
+}
+function matIntro(c){
+  if (!c.mats.length) return '';
+  const gmv = load(MKEY, {});
+  return `<h3 class="sub">Matériel</h3>${c.mats.map((m, k) => {
+    const known = c.r.ecarts.filter(x => norm(x.item) === norm(m));
+    const opts = [...new Set([...known.map(x => x.variant), gmv[norm(m)]].filter(Boolean))];
+    return `<div class="matrow"><label class="matname" for="mv-${k}">${esc(m)}</label><input id="mv-${k}" data-f="matv" data-k="${k}" list="dl-${k}" value="${esc(c.mat[m] || '')}" placeholder="Lequel ? ex. induction, fonte…" autocomplete="off"><datalist id="dl-${k}">${opts.map(o => `<option value="${esc(o)}">`).join('')}</datalist>${known.length ? `<ul class="gaps">${known.map(x => `<li>${esc(x.variant)} : ${gapText(x.avg)} en moyenne, sur ${x.n} fois</li>`).join('')}</ul>` : ''}</div>`;
+  }).join('')}`;
+}
+function matEstText(){
+  const c = S.cook; if (!c || !c.mats) return '';
+  let g = 0, any = false;
+  c.mats.forEach(m => { const v = norm(c.mat[m] || ''); if (!v) return; const e = c.r.ecarts.find(x => norm(x.item) === norm(m) && norm(x.variant) === v); if (e) { g += e.avg; any = true; } });
+  const est = Math.round(estTotal(c.r) * c.f);
+  if (!any || !est) return '';
+  return `Avec ce matériel, compte plutôt ${fmtDur(Math.max(60, Math.round((est + g) / 10) * 10))} (écart observé : ${g < 0 ? '−' : '+'}${fmtDur(Math.abs(Math.round(g)))}).`;
+}
+async function quitCook(){
+  const ok = await ask('Quitter la recette ?', 'Les étapes déjà terminées gardent leur temps réel.', [{ label:'Quitter', value:true, kind:'danger' }, { label:'Continuer la cuisson', value:false }]);
+  if (!ok) return;
+  stopAlarm(); cancelNote(true); stopVoice(); keepAwake(false); hush();
+  S.cook = null; S.screen = 'home'; render();
+}
+function repeatStep(){
+  const c = S.cook;
+  if (c.i < 0) return say(`${c.r.titre}, ${plural(c.portions, 'portion')}. Ingrédients : ${allIngr(c.r).map(x => scaleIngr(x, c.f)).join(', ')}.`, true);
+  say(`Étape ${c.i + 1}. ${c.r.etapes[c.i].instruction}`, true);
+}
+function sayRemaining(){
+  const t = S.cook.t;
+  if (!t) return say('Pas de minuteur pour cette étape.', true);
+  if (t.done) return say('Le temps imparti est écoulé.', true);
+  const rem = t.running ? (t.endAt - Date.now()) / 1000 : t.remaining;
+  say(`Il reste ${fmtSpeech(rem)}${t.running ? '' : ', minuteur à l’arrêt'}.`, true);
+}
+function readNotes(){
+  const c = S.cook, st = c.r.etapes[c.i];
+  if (!st || !st.notes.length) return say('Pas de note pour cette étape.', true);
+  say(`Note : ${st.notes.join('. ')}`, true);
+}
+function readIngredients(){
+  const c = S.cook, st = c.r.etapes[c.i];
+  const si = st ? stepIngr(c.r, st) : [];
+  const list = si.length ? si : allIngr(c.r);
+  say(`Ingrédients : ${list.map(x => scaleIngr(x, c.f)).join(', ')}.`, true);
+}
+
+/* Minuteur */
+function tStart(){
+  const c = S.cook, t = c && c.t;
+  if (!t) return say('Pas de minuteur pour cette étape.', true);
+  if (t.running) return;
+  if (t.remaining <= 0) { t.remaining = t.total; t.done = false; }
+  t.endAt = Date.now() + t.remaining * 1000; t.running = true; updTimer(true);
+}
+function tPause(){ const t = S.cook && S.cook.t; if (!t || !t.running) return; t.remaining = Math.max(0, (t.endAt - Date.now()) / 1000); t.running = false; updTimer(true); }
+function tAdd(){
+  const c = S.cook; if (!c || c.i < 0) return;
+  if (!c.t) { c.t = { base:60, total:60, remaining:60, endAt:0, running:false, done:false }; render(); return tStart(); }
+  const t = c.t;
+  if (c.alarm || t.done) { stopAlarm(); t.done = false; t.total = 60; t.remaining = 60; t.running = false; return tStart(); }
+  if (t.running) t.endAt += 60000; else t.remaining += 60;
+  t.total += 60; updTimer(true);
+}
+function tReset(){ const t = S.cook && S.cook.t; if (!t) return; stopAlarm(); t.running = false; t.done = false; t.total = t.base; t.remaining = t.base; updTimer(true); }
+const RING = 2 * Math.PI * 54;
+function ctlHtml(t){
+  const main = t.running ? `<button class="btn mini primary" data-act="t-pause">Pause</button>`
+    : `<button class="btn mini primary" data-act="t-start">${t.done ? 'Relancer' : t.remaining < t.total ? 'Reprendre' : 'Démarrer'}</button>`;
+  return `${main}<button class="btn mini" data-act="t-add">+1 min</button><button class="btn mini" data-act="t-reset">Réinitialiser</button>`;
+}
+function updTimer(controls){
+  const c = S.cook; if (!c || !c.t || S.screen !== 'cook') return;
+  const t = c.t, val = $('#tval'), fill = $('#tfill'), box = $('#timer');
+  if (!val) return;
+  val.textContent = fmtClock(t.remaining);
+  fill.setAttribute('stroke-dashoffset', String(RING * (1 - Math.max(0, Math.min(1, t.remaining / t.total)))));
+  box.classList.toggle('done', t.done);
+  if (controls) $('#tctl').innerHTML = ctlHtml(t);
+}
+setInterval(() => {
+  const c = S.cook; if (!c || !c.t || !c.t.running) return;
+  const rem = (c.t.endAt - Date.now()) / 1000;
+  if (rem <= 0) { c.t.running = false; c.t.remaining = 0; c.t.done = true; updTimer(true); startAlarm(); }
+  else { c.t.remaining = rem; updTimer(false); }
+}, 250);
+
+/* Alerte */
+function ring(){ beep(880, .18); setTimeout(() => beep(880, .18), 260); try { navigator.vibrate && navigator.vibrate([260, 120, 260]); } catch (e) {} }
+function startAlarm(){
+  const c = S.cook; if (!c || c.alarm) return;
+  c.alarm = true; renderAlarm(); ring();
+  c.alarmIv = setInterval(ring, 1600);
+  say('Le temps imparti est écoulé.', true);
+  c.alarmSay = setInterval(() => say('Le temps imparti est écoulé.', true), 12000);
+}
+function stopAlarm(){
+  const c = S.cook; if (!c) return;
+  clearInterval(c.alarmIv); clearInterval(c.alarmSay);
+  if (c.alarm) { c.alarm = false; hush(); }
+  renderAlarm();
+}
+function renderAlarm(){
+  const host = $('#alarm-host'), c = S.cook;
+  host.innerHTML = c && c.alarm && S.screen === 'cook' ? `<div class="alarm" role="alert"><b>Le temps imparti est écoulé</b><span>L’étape reste affichée : dis « étape terminée » quand tu as fini.</span><div class="row2"><button class="btn" data-act="alarm-stop">Arrêter l’alerte</button><button class="btn" data-act="t-add">+1 min</button></div></div>` : '';
+}
+
+/* Annotations dictées en cuisson */
+function startNote(){
+  const c = S.cook;
+  if (c.i < 0) return say('Commence d’abord une étape pour y ajouter une note.', true);
+  if (!SR || V.state !== 'on') { typeNoteSheet(); return; }
+  hush(); c.note = { mode:'listen', text:'', timer:null };
+  renderNote(); armNoteSilence(5000);
+}
+function armNoteSilence(ms = 3500){ const c = S.cook; clearTimeout(c.note.timer); c.note.timer = setTimeout(endNoteListen, ms); }
+function endNoteListen(){
+  const c = S.cook; if (!c.note) return;
+  clearTimeout(c.note.timer);
+  if (!c.note.text) { c.note = null; renderNote(); toast('Note vide : rien n’a été ajouté.'); return; }
+  c.note.mode = 'review'; c.note.text = cap(c.note.text);
+  c.note.timer = setTimeout(keepNote, 5000); renderNote();
+}
+function keepNote(){
+  const c = S.cook; if (!c || !c.note) return;
+  clearTimeout(c.note.timer);
+  const text = c.note.text.trim(); c.note = null; renderNote();
+  if (!text) return;
+  c.r.etapes[c.i].notes.push(text); persist(); render(); toast('Note ajoutée à l’étape');
+}
+function cancelNote(silent){
+  const c = S.cook; if (!c || !c.note) return;
+  clearTimeout(c.note.timer); c.note = null; renderNote();
+  if (!silent) toast('Note annulée');
+}
+function renderNote(){
+  const host = $('#note-host'), c = S.cook;
+  if (!c || !c.note || S.screen !== 'cook') { host.innerHTML = ''; return; }
+  host.innerHTML = c.note.mode === 'listen'
+    ? `<div class="notepanel" aria-live="polite"><b>Je t’écoute</b><p>${esc(c.note.text) || '…'}</p><p class="muted">Dis « fin de note » ou fais une pause pour terminer.</p><div class="row-btns"><button class="btn mini primary" data-act="note-end">Terminer</button><button class="btn mini" data-act="note-cancel">Annuler</button></div></div>`
+    : `<div class="notepanel"><b>Note à ajouter</b><textarea data-f="notetext" rows="3">${esc(c.note.text)}</textarea><p class="muted" id="auto-hint">Ajout automatique dans 5 s, ou dis « OK ». Touche le texte pour le corriger.</p><div class="row-btns"><button class="btn mini primary" data-act="note-keep">Garder</button><button class="btn mini" data-act="note-cancel">Annuler</button></div></div>`;
+}
+function typeNoteSheet(){
+  sheet(`<h3>Ajouter une note</h3><p>Elle sera enregistrée avec cette étape.</p><textarea id="typenote" rows="4"></textarea><div class="acts"><button class="btn primary" data-act="typenote-add">Ajouter la note</button><button class="btn" data-act="close-sheet">Annuler</button></div>`);
+}
+
+/* ---------- Écrans ---------- */
+function vHome(){
+  const n = S.recipes.length;
+  const toggle = (k, label) => `<label class="toggle"><span>${label}</span><input type="checkbox" data-setting="${k}" ${S.settings[k] ? 'checked' : ''}></label>`;
+  return `
+  <button class="choice launch" data-act="go-list"><strong>Lancer une recette</strong><span>Choisir parmi ${plural(n, 'recette')}</span></button>
+  <button class="choice create" data-act="go-create"><strong>Créer une recette</strong><span>Au formulaire, à la voix, en texte ou depuis une photo</span></button>
+  <button class="choice" data-act="go-shop"><strong>Courses</strong><span>La liste des ingrédients à acheter, envoyée vers Notes</span></button>
+  ${SR ? '' : `<p class="hint">La commande vocale n’est pas disponible dans ce navigateur : les boutons font tout. Pour l’essayer, ouvre la page dans Chrome sur ton téléphone.</p>`}
+  <h2 class="sec">Fichiers</h2>
+  <div class="stack"><button class="btn" data-act="import">Importer un fichier .recette.txt</button><button class="btn" data-act="export-template">Exporter le modèle vide</button></div>
+  <h2 class="sec">Réglages</h2>
+  ${toggle('lire', 'Lire les étapes à voix haute')}
+  ${toggle('autoMinuteur', 'Démarrer le minuteur automatiquement')}
+  ${toggle('lireNotes', 'Lire les notes après chaque étape')}
+  <p class="hint">Les recettes sont enregistrées dans ce navigateur, une par fichier texte. Exporte-les pour les garder ou les partager.</p>`;
+}
+function rowsHtml(){
+  const q = norm(S.q);
+  const rs = S.recipes.filter(r => !q || norm(r.titre).includes(q) || norm(r.description).includes(q) || r.etapes.some(e => e.notes.some(x => norm(x).includes(q))))
+    .sort((a, b) => a.titre.localeCompare(b.titre, 'fr'));
+  if (!S.recipes.length) return `<div class="empty"><p>Aucune recette pour l’instant.</p><div class="row-btns" style="justify-content:center"><button class="btn primary" data-act="go-create">Créer une recette</button></div></div>`;
+  if (!rs.length) return `<div class="empty"><p>Aucune recette ne correspond à « ${esc(S.q)} ».</p></div>`;
+  return rs.map(r => { const est = estTotal(r); return `<div class="rrow"><button class="main" data-act="cook" data-id="${r.id}"><b>${esc(r.titre)}</b><small>${plural(r.etapes.length, 'étape')}${est ? `, ${fmtDur(est)} estimées` : ''}</small></button><button class="iconbtn" data-act="menu" data-id="${r.id}" aria-label="Options pour ${esc(r.titre)}">⋯</button></div>`; }).join('');
+}
+function vList(){
+  return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Lancer une recette</h2></div>
+  ${S.recipes.length > 3 ? `<input id="q" class="search" type="search" placeholder="Rechercher un titre ou une note" value="${esc(S.q)}" aria-label="Rechercher">` : ''}
+  <div id="rows">${rowsHtml()}</div>`;
+}
+function stepCard(e, s, n){
+  const mi = e.temps ? Math.floor(e.temps / 60) : '', se = e.temps ? e.temps % 60 : '';
+  return `<div class="stepcard">
+    <div class="sc-head"><span class="num">Étape ${s + 1}</span>
+      <button class="iconbtn" data-act="up" data-s="${s}" aria-label="Monter l’étape" ${s === 0 ? 'disabled' : ''}>↑</button>
+      <button class="iconbtn" data-act="down" data-s="${s}" aria-label="Descendre l’étape" ${s === n - 1 ? 'disabled' : ''}>↓</button>
+      <button class="iconbtn" data-act="del-step" data-s="${s}" aria-label="Supprimer l’étape">✕</button></div>
+    <div class="lbl">Instruction</div>
+    <div class="withmic"><textarea id="f-instr-${s}" data-f="instr" data-s="${s}" rows="3" placeholder="Ce qu’il faut faire" aria-label="Instruction de l’étape ${s + 1}">${esc(e.instruction)}</textarea>${micBtn(`f-instr-${s}`, 'space')}</div>
+    <div class="lbl">Temps estimé<div class="timeinputs"><input type="number" inputmode="numeric" min="0" data-f="tmin" data-s="${s}" value="${mi}" aria-label="Minutes"><span>min</span><input type="number" inputmode="numeric" min="0" max="59" data-f="tsec" data-s="${s}" value="${se}" aria-label="Secondes"><span>s</span></div></div>
+    <div class="lbl">Ingrédients de l’étape, un par ligne</div>
+    <div class="withmic"><textarea id="f-sing-${s}" data-f="sing" data-s="${s}" rows="2" placeholder="Vide : l’app repère ceux cités dans l’instruction" aria-label="Ingrédients de l’étape ${s + 1}">${esc(e.ingredients.join('\n'))}</textarea>${micBtn(`f-sing-${s}`, 'line')}</div>
+    <div class="lbl">Matériel de l’étape, un par ligne</div>
+    <div class="withmic"><textarea id="f-smat-${s}" data-f="smat" data-s="${s}" rows="2" placeholder="Vide : l’app repère celui cité dans l’instruction" aria-label="Matériel de l’étape ${s + 1}">${esc((e.materiel || []).join('\n'))}</textarea>${micBtn(`f-smat-${s}`, 'line')}</div>
+    <div class="lbl">Notes</div>
+    <div style="margin-top:6px">${e.notes.map((x, k) => `<div class="noterow"><textarea data-f="note" data-s="${s}" data-n="${k}" rows="2" aria-label="Note ${k + 1}">${esc(x)}</textarea><button class="iconbtn" data-act="del-note" data-s="${s}" data-n="${k}" aria-label="Supprimer la note">✕</button></div>`).join('')}</div>
+    <div class="row-btns"><button class="btn mini" data-act="add-note" data-s="${s}">Ajouter une note</button>${SR ? `<button class="btn mini" data-act="dictate" data-s="${s}">Dicter une note</button>` : ''}</div>
+    ${e.tempsReels.length ? `<p class="reels">Temps réels : ${e.tempsReels.map(fmtDur).join(', ')}</p>` : ''}
+  </div>`;
+}
+function vEditor(){
+  const d = S.draft, isNew = !d.id || !find(d.id);
+  const head = `<div class="topbar"><button class="btn ghost" data-act="cancel-edit">‹ Annuler</button><h2>${isNew ? 'Créer une recette' : 'Modifier la recette'}</h2></div>
+  <div class="tabs" role="group" aria-label="Mode d’édition"><button data-act="tab" data-tab="form" aria-pressed="${S.tab === 'form'}">Formulaire</button><button data-act="tab" data-tab="text" aria-pressed="${S.tab === 'text'}">Texte à marqueurs</button></div>
+  ${S.photoLim ? `<button class="btn" data-act="photo" style="width:100%;margin-top:14px">${CAM} Remplir depuis une photo</button>` : ''}
+  ${S.editErr ? `<div class="error" role="alert">${esc(S.editErr)}</div>` : ''}`;
+  const bar = `<div class="savebar"><button class="btn primary" data-act="save">Enregistrer la recette</button></div>`;
+  if (S.tab === 'text') return head + `<p class="hint">Un marqueur en début de ligne : Recette, Description, Portions, Ingrédient, Matériel, Étape, Temps, Note. « Temps réel » et « Écart matériel » sont remplis par l’application.</p><textarea id="rawtext" class="raw" spellcheck="false" aria-label="Texte de la recette">${esc(serialize(d))}</textarea>` + bar;
+  return head + `
+  ${SR ? `<p class="hint">Touche le micro à côté d’un champ pour le remplir à la voix.</p>` : ''}
+  <div class="lbl">Nom de la recette</div>
+  <div class="withmic"><input id="f-titre" data-f="titre" value="${esc(d.titre)}" maxlength="100" placeholder="Risotto aux champignons" aria-label="Nom de la recette">${micBtn('f-titre', 'space')}</div>
+  <div class="lbl">Description</div>
+  <div class="withmic"><textarea id="f-desc" data-f="description" rows="2" aria-label="Description">${esc(d.description)}</textarea>${micBtn('f-desc', 'space')}</div>
+  <label class="lbl">Portions<input class="short" data-f="portions" type="number" inputmode="numeric" min="1" max="50" value="${d.portions ?? ''}"></label>
+  <h3 class="sub">Ingrédients</h3>
+  ${d.ingredients.map((x, i) => `<div class="ingrow"><input id="f-ing-${i}" data-f="ing" data-i="${i}" value="${esc(x)}" placeholder="200 g de farine" aria-label="Ingrédient ${i + 1}">${micBtn(`f-ing-${i}`, 'space')}<button class="iconbtn" data-act="del-ing" data-i="${i}" aria-label="Retirer l’ingrédient">✕</button></div>`).join('')}
+  <button class="btn mini" data-act="add-ing">Ajouter un ingrédient</button>
+  <h3 class="sub">Matériel</h3>
+  ${(d.materiel || []).map((x, i) => `<div class="ingrow"><input id="f-mat-${i}" data-f="mat" data-i="${i}" value="${esc(x)}" placeholder="Cocotte, four, robot…" aria-label="Matériel ${i + 1}">${micBtn(`f-mat-${i}`, 'space')}<button class="iconbtn" data-act="del-mat" data-i="${i}" aria-label="Retirer ce matériel">✕</button></div>`).join('')}
+  <button class="btn mini" data-act="add-mat">Ajouter du matériel</button>
+  <h3 class="sub">Étapes</h3>
+  ${d.etapes.map((e, s) => stepCard(e, s, d.etapes.length)).join('')}
+  <button class="btn" data-act="add-step" style="width:100%">Ajouter une étape</button>` + bar;
+}
+function vCook(){
+  const c = S.cook, r = c.r, n = r.etapes.length;
+  const top = `<div class="cook-top"><button class="btn ghost" data-act="quit">‹ Quitter</button><span class="sp"></span><button id="mic" class="mic" data-act="mic"><span class="dot"></span><span id="mic-l">${micLabel()}</span></button></div><p id="heard" class="heard" aria-live="polite"></p>`;
+  if (c.i < 0) {
+    const est = Math.round(estTotal(r) * c.f);
+    const ratio = c.f > 1 ? `multipliés par ${fmtQty(c.f)}` : `divisés par ${fmtQty(1 / c.f)}`;
+    return top + `<div class="progress"><i style="width:0%"></i></div>
+    <p class="stepno">${esc(r.titre)}</p><h2 class="instr">Pour combien de portions ?</h2>
+    ${r.description ? `<p class="desc">${esc(r.description)}</p>` : ''}
+    <div class="stepper"><button class="iconbtn big" data-act="por-minus" aria-label="Une portion de moins" ${c.portions <= 1 ? 'disabled' : ''}>−</button><output id="por" aria-live="polite">${c.portions}</output><button class="iconbtn big" data-act="por-plus" aria-label="Une portion de plus" ${c.portions >= 50 ? 'disabled' : ''}>+</button></div>
+    <p class="porhint">${r.portions ? `Recette prévue pour ${plural(r.portions, 'portion')}${c.f !== 1 ? ` : quantités et temps ${ratio}` : ''}.` : 'La recette n’indique pas de portions : 1 correspond aux quantités d’origine.'}</p>
+    <div class="totals"><span>Temps total estimé</span><b>${est ? fmtDur(est) : 'non renseigné'}</b></div>
+    <p class="porhint" id="matest">${matEstText()}</p>
+    <h3 class="sub">Ingrédients pour ${plural(c.portions, 'portion')}</h3>
+    <ul class="inglist">${allIngr(r).map(x => `<li>${esc(scaleIngr(x, c.f))}</li>`).join('')}</ul>
+    ${matIntro(c)}
+    <p class="next">${plural(n, 'étape')}. ${SR ? 'Dis « 6 portions » pour changer, puis « commencer ».' : ''}</p>
+    <div class="cookbar"><button class="btn primary done-btn" data-act="next">Commencer</button></div>`;
+  }
+  const st = r.etapes[c.i], next = r.etapes[c.i + 1], t = c.t;
+  const timer = t ? `<div class="timer${t.done ? ' done' : ''}" id="timer"><div class="dial"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="track" cx="60" cy="60" r="54" fill="none" stroke-width="10"/><circle id="tfill" class="fill" cx="60" cy="60" r="54" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="${RING}" stroke-dashoffset="${RING * (1 - t.remaining / t.total)}"/></svg><div class="t" id="tval" role="timer">${fmtClock(t.remaining)}</div></div><div><p class="tlabel">Temps estimé${c.f !== 1 ? ` pour ${plural(c.portions, 'portion')}` : ''} : ${fmtDur(t.base)}</p><div class="ctl" id="tctl">${ctlHtml(t)}</div></div></div>`
+    : `<div class="row-btns"><button class="btn mini" data-act="t-add">Ajouter un minuteur d’1 min</button></div>`;
+  return top + `<div class="progress"><i style="width:${(c.i / n) * 100}%"></i></div>
+  <p class="stepno">Étape ${c.i + 1} sur ${n}</p>
+  <p class="instr">${esc(st.instruction)}</p>
+  ${(si => si.length ? `<div class="chips"><span class="chiplab">Ingrédients</span>${si.map(x => `<span class="chip">${esc(scaleIngr(x, c.f))}</span>`).join('')}</div>` : '')(stepIngr(r, st))}
+  ${(sm => sm.length ? `<div class="chips"><span class="chiplab">Matériel</span>${sm.map(x => { const key = (c.mats || []).find(m => norm(m) === norm(x)); const v = key ? c.mat[key] : ''; return `<span class="chip tool">${esc(x)}${v ? ` : ${esc(v)}` : ''}</span>`; }).join('')}</div>` : '')(stepMat(r, st))}
+  ${st.notes.map(x => `<div class="notebox">${esc(x)}</div>`).join('')}
+  ${timer}
+  ${st.tempsReels.length ? `<p class="past">Les dernières fois : ${st.tempsReels.map(fmtDur).join(', ')}</p>` : ''}
+  <div class="row-btns"><button class="btn mini" data-act="note">${SR && V.state === 'on' ? 'Dicter une note' : 'Ajouter une note'}</button><button class="btn mini" data-act="repeat">Relire l’étape</button></div>
+  <p class="next">${next ? `Ensuite : ${esc(firstWords(next.instruction, 12))}` : 'C’est la dernière étape.'}</p>
+  <div class="cookbar"><button class="btn back-btn" data-act="prev" aria-label="Étape précédente">‹</button><button class="btn primary done-btn" data-act="next">Étape terminée</button></div>`;
+}
+function vRecap(){
+  const c = S.cook, r = c.r;
+  const tot = c.results.reduce((a, x) => a + (x || 0), 0), est = Math.round(estTotal(r) * c.f);
+  return `<h1 class="recap-h">Bon appétit</h1>
+  <p class="desc">${esc(r.titre)}, ${plural(c.portions, 'portion')} : ${fmtDur(tot)} en cuisine${est ? `, pour ${fmtDur(est)} estimées` : ''}.</p>
+  <div class="scroll"><table class="recap"><thead><tr><th>Étape</th><th class="n">Estimé</th><th class="n">Réel</th></tr></thead>
+  <tbody>${r.etapes.map((e, i) => `<tr><td>${i + 1}. ${esc(firstWords(e.instruction, 6))}</td><td class="n">${e.temps ? fmtDur(Math.max(1, Math.round(e.temps * c.f))) : '—'}</td><td class="n">${c.results[i] ? fmtDur(c.results[i]) : '—'}</td></tr>`).join('')}</tbody>
+  <tfoot><tr><td>Total</td><td class="n">${est ? fmtDur(est) : '—'}</td><td class="n">${fmtDur(tot)}</td></tr></tfoot></table></div>
+  ${c.matRes && c.matRes.length ? `<h3 class="sub">Matériel</h3><ul class="gaps">${c.matRes.map(x => `<li>${esc(x.m)} (${esc(x.v)}) : ${gapText(x.gap)} sur ses étapes cette fois</li>`).join('')}</ul>` : ''}
+  <p class="hint">Chaque temps réel est enregistré dans le fichier de la recette ; seuls les 5 derniers sont gardés par étape.</p>
+  <div class="stack"><button class="btn primary" data-act="home">Retour à l’accueil</button><button class="btn" data-act="export" data-id="${r.id}">Exporter le fichier</button></div>`;
+}
+function buildShop(){
+  const map = new Map(), used = [];
+  Object.entries(S.shop.sel).forEach(([id, p]) => {
+    const r = find(id); if (!r) return;
+    used.push(`${r.titre} (${plural(p, 'portion')})`);
+    const f = p / (r.portions || 1);
+    allIngr(r).forEach(x => { const it = shopItem(x, f), cur = map.get(it.key); if (cur) { if (cur.q != null && it.q != null) cur.q += it.q; } else map.set(it.key, it); });
+  });
+  return { used, items:[...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr')) };
+}
+const shopLabel = it => it.q == null ? it.name : `${it.name} : ${fmtShopQty(it.q, it.base)}`;
+function vShop(){
+  const { items } = buildShop();
+  const rs = [...S.recipes].sort((a, b) => a.titre.localeCompare(b.titre, 'fr'));
+  return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Liste de courses</h2></div>
+  <p class="hint" style="margin-top:0">Coche les recettes et choisis le nombre de portions : les quantités s’additionnent.</p>
+  ${rs.map(r => { const p = S.shop.sel[r.id], on = p != null; return `<div class="shoprow${on ? ' on' : ''}"><label class="pick"><input type="checkbox" data-shop="${r.id}" ${on ? 'checked' : ''}><span><b>${esc(r.titre)}</b><small>${r.portions ? `Prévue pour ${plural(r.portions, 'portion')}` : 'Portions non renseignées'}</small></span></label>${on ? `<div class="stepper"><button class="iconbtn" data-act="shop-minus" data-id="${r.id}" aria-label="Une portion de moins" ${p <= 1 ? 'disabled' : ''}>−</button><output>${p}</output><button class="iconbtn" data-act="shop-plus" data-id="${r.id}" aria-label="Une portion de plus" ${p >= 50 ? 'disabled' : ''}>+</button><span class="unit">${p > 1 ? 'portions' : 'portion'}</span></div>` : ''}</div>`; }).join('')}
+  ${items.length ? `<h3 class="sub">À acheter</h3><ul class="shoplist">${items.map(it => { const off = S.shop.skip[it.key]; return `<li><label class="${off ? 'off' : ''}"><input type="checkbox" data-skip="${esc(it.key)}" ${off ? '' : 'checked'}><span>${esc(shopLabel(it))}</span></label></li>`; }).join('')}</ul><p class="hint">Décoche ce que tu as déjà. « Envoyer vers Notes » ouvre le menu de partage : choisis Samsung Notes pour créer une nouvelle note avec la liste.</p>` : `<div class="empty"><p>Coche une ou plusieurs recettes pour composer la liste.</p></div>`}
+  <div class="savebar"><button class="btn primary" data-act="shop-send" ${items.length ? '' : 'disabled'}>Envoyer vers Notes</button></div>`;
+}
+async function sendShop(){
+  const { used, items } = buildShop();
+  const keep = items.filter(it => !S.shop.skip[it.key]);
+  if (!keep.length) { toast('Tout est décoché : rien à envoyer.'); return; }
+  const date = new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
+  const text = `Liste de courses du ${date}\nPour : ${used.join(', ')}\n\n${keep.map(it => `☐ ${shopLabel(it)}`).join('\n')}\n`;
+  S.shopText = text;
+  if (navigator.share) {
+    try { await navigator.share({ title:'Liste de courses', text }); toast('Liste envoyée'); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  sheet(`<h3>Liste de courses</h3><p>Le partage direct vers Notes n’est pas disponible dans cette vue. Copie la liste et colle-la dans une nouvelle note, ou enregistre-la en fichier.</p><textarea class="raw" readonly>${esc(text)}</textarea><div class="acts"><button class="btn primary" data-act="copy">Copier la liste</button><button class="btn" data-act="shop-save">Enregistrer en fichier .txt</button><button class="btn" data-act="close-sheet">Fermer</button></div>`);
+}
+function render(){
+  const v = { home:vHome, list:vList, editor:vEditor, cook:vCook, recap:vRecap, shop:vShop }[S.screen];
+  app.innerHTML = v();
+  document.body.dataset.screen = S.screen;
+  if (S.screen === 'cook') updMic();
+  renderAlarm(); renderNote();
+}
+
+/* ---------- Éditeur ---------- */
+const blankStep = () => ({ instruction:'', temps:null, tempsReels:[], ingredients:[], materiel:[], notes:[] });
+function openEditor(id){
+  const r = id ? find(id) : null;
+  S.from = S.screen;
+  S.draft = r ? JSON.parse(JSON.stringify(r)) : { id:null, titre:'', description:'', portions:4, ingredients:[''], materiel:[''], etapes:[blankStep()], ecarts:[] };
+  S.tab = 'form'; S.editErr = ''; S.screen = 'editor'; render(); window.scrollTo(0, 0);
+}
+function clean(d){
+  d.titre = (d.titre || '').trim(); d.description = (d.description || '').trim();
+  d.ingredients = d.ingredients.map(x => (x || '').trim()).filter(Boolean);
+  d.materiel = (d.materiel || []).map(x => (x || '').trim()).filter(Boolean);
+  d.etapes = d.etapes.map(e => ({ ...e, instruction:(e.instruction || '').trim(), ingredients:e.ingredients.map(x => (x || '').trim()).filter(Boolean), notes:e.notes.map(x => (x || '').trim()).filter(Boolean), materiel:(e.materiel || []).map(x => (x || '').trim()).filter(Boolean) })).filter(e => e.instruction);
+}
+function readRaw(){ const { recipe } = parse($('#rawtext').value, { lenient:true }); recipe.id = S.draft.id; S.draft = recipe; }
+function dictateNote(s){
+  const st = S.draft.etapes[s]; st.notes.push(''); const k = st.notes.length - 1; render();
+  const ta = document.querySelector(`textarea[data-f="note"][data-s="${s}"][data-n="${k}"]`);
+  if (!ta) return;
+  ta.placeholder = 'Parle, je transcris…'; ta.focus();
+  const rec = new SR(); rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = false;
+  rec.onresult = e => { let t = ''; for (const res of e.results) t += res[0].transcript; st.notes[k] = cap(t.trim()); ta.value = st.notes[k]; };
+  rec.onerror = e => { if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e.error)) toast('Micro refusé : écris la note au clavier.'); };
+  rec.onend = () => { ta.placeholder = ''; };
+  try { rec.start(); } catch (e) {}
+}
+
+/* ---------- Feuilles, messages, fichiers ---------- */
+function sheet(html){
+  closeSheet();
+  const b = document.createElement('div'); b.className = 'backdrop'; b.id = 'sheet';
+  b.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  b.addEventListener('click', e => { if (e.target === b) { closeSheet(); b._res && b._res(null); } });
+  document.body.appendChild(b);
+  const f = b.querySelector('textarea, input, button'); f && f.focus();
+  return b;
+}
+function closeSheet(){ const s = $('#sheet'); if (s) s.remove(); }
+function ask(title, msg, opts){
+  return new Promise(res => {
+    const b = sheet(`<h3>${esc(title)}</h3>${msg ? `<p>${esc(msg)}</p>` : ''}<div class="acts">${opts.map((o, i) => `<button class="btn ${o.kind || ''}" data-ans="${i}">${esc(o.label)}</button>`).join('')}</div>`);
+    b._res = res;
+    b.addEventListener('click', e => { const a = e.target.closest('[data-ans]'); if (a) { closeSheet(); res(opts[+a.dataset.ans].value); } });
+  });
+}
+let toastT;
+function toast(m){
+  let el = $('#toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.textContent = m; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 2600);
+}
+function recipeMenu(id){
+  const r = find(id); if (!r) return;
+  sheet(`<h3>${esc(r.titre)}</h3><div class="acts">
+    <button class="btn primary" data-act="cook" data-id="${id}">Lancer la recette</button>
+    <button class="btn" data-act="edit" data-id="${id}">Modifier</button>
+    <button class="btn" data-act="duplicate" data-id="${id}">Dupliquer</button>
+    <button class="btn" data-act="export" data-id="${id}">Exporter le fichier</button>
+    <button class="btn danger" data-act="delete" data-id="${id}">Supprimer</button></div>`);
+}
+let dlP = null;
+function getDl(){
+  if (!dlP) dlP = (window.claude && typeof window.claude.use === 'function') ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null);
+  return dlP;
+}
+async function exportText(name, text){
+  const dl = await getDl();
+  if (!dl) {
+    try {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type:'text/plain;charset=utf-8' }));
+      a.download = name; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+      toast('Fichier enregistré dans Téléchargements'); return;
+    } catch (e) {}
+  }
+  if (dl) {
+    try { await dl.save({ filename:name, data:text }); toast('Fichier enregistré'); return; }
+    catch (e) {
+      if (e && e.code === 'declined') return;
+      if (e && e.code === 'rate_limited') { toast('Un enregistrement est déjà en cours.'); return; }
+    }
+  }
+  sheet(`<h3>${esc(name)}</h3><p>Copie ce texte dans un fichier qui se termine par .recette.txt :</p><textarea class="raw" readonly>${esc(text)}</textarea><div class="acts"><button class="btn primary" data-act="copy">Copier le texte</button><button class="btn" data-act="close-sheet">Fermer</button></div>`);
+}
+const fileInput = document.createElement('input');
+fileInput.type = 'file'; fileInput.accept = '.txt,text/plain'; fileInput.multiple = true; fileInput.hidden = true;
+document.body.appendChild(fileInput);
+fileInput.addEventListener('change', async () => {
+  const files = [...fileInput.files]; fileInput.value = '';
+  let ok = 0; const errs = [];
+  for (const f of files) {
+    try {
+      const { recipe } = parse(await f.text());
+      const same = S.recipes.find(r => norm(r.titre) === norm(recipe.titre));
+      if (same) {
+        const a = await ask(`« ${recipe.titre} » existe déjà`, 'Que faire du fichier importé ?', [{ label:'Remplacer', value:'r', kind:'primary' }, { label:'Garder les deux', value:'k' }, { label:'Ignorer ce fichier', value:null }]);
+        if (a === 'r') { recipe.id = same.id; S.recipes[S.recipes.indexOf(same)] = recipe; ok++; }
+        else if (a === 'k') { recipe.id = uid(); recipe.titre = uniqueTitle(recipe.titre); S.recipes.push(recipe); ok++; }
+      } else { recipe.id = uid(); S.recipes.push(recipe); ok++; }
+    } catch (e) { errs.push(`${f.name} : ${e.message}`); }
+  }
+  persist(); render();
+  if (errs.length) sheet(`<h3>Certains fichiers n’ont pas été importés</h3><ul>${errs.map(x => `<li>${esc(x)}</li>`).join('')}</ul><div class="acts"><button class="btn" data-act="close-sheet">Fermer</button></div>`);
+  else if (ok) toast(ok > 1 ? `${ok} recettes importées` : 'Recette importée');
+});
+
+/* ---------- Événements ---------- */
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+  const a = b.dataset.act, id = b.dataset.id, s = +b.dataset.s, k = +b.dataset.n, i = +b.dataset.i;
+  const inSheet = !!b.closest('#sheet');
+  const sheetText = inSheet ? ($('#sheet textarea') || {}).value : '';
+  if (inSheet && a !== 'copy') closeSheet();
+  const d = S.draft;
+  switch (a) {
+    case 'home': stopAlarm(); S.cook = null; S.screen = 'home'; render(); window.scrollTo(0, 0); break;
+    case 'go-list': S.screen = 'list'; render(); window.scrollTo(0, 0); break;
+    case 'go-create': openEditor(null); break;
+    case 'go-shop': S.screen = 'shop'; render(); window.scrollTo(0, 0); break;
+    case 'shop-minus': case 'shop-plus': { const p = S.shop.sel[id]; if (p == null) break; S.shop.sel[id] = Math.max(1, Math.min(50, p + (a === 'shop-plus' ? 1 : -1))); render(); break; }
+    case 'shop-send': sendShop(); break;
+    case 'shop-save': exportText('liste-de-courses.txt', S.shopText); break;
+    case 'import': fileInput.click(); break;
+    case 'export-template': exportText('modele.recette.txt', TEMPLATE); break;
+    case 'cook': startCook(id); break;
+    case 'menu': recipeMenu(id); break;
+    case 'edit': openEditor(id); break;
+    case 'export': { const r = find(id); if (r) exportText(fileName(r), serialize(r)); break; }
+    case 'duplicate': { const r = find(id); if (!r) break; const c = JSON.parse(JSON.stringify(r)); c.id = uid(); c.titre = uniqueTitle(`${r.titre} (copie)`); c.etapes.forEach(x => { x.tempsReels = []; }); c.ecarts = []; S.recipes.push(c); persist(); render(); toast('Recette dupliquée'); break; }
+    case 'delete': { const r = find(id); if (!r) break; const ok = await ask('Supprimer cette recette ?', `« ${r.titre} » sera retirée de l’application.`, [{ label:'Supprimer', value:true, kind:'danger' }, { label:'Garder la recette', value:false }]); if (ok) { S.recipes = S.recipes.filter(x => x.id !== id); persist(); render(); toast('Recette supprimée'); } break; }
+    case 'close-sheet': break;
+    case 'copy': { const ta = $('#sheet textarea'); try { await navigator.clipboard.writeText(ta.value); toast('Texte copié'); } catch (err) { ta.select(); try { document.execCommand('copy'); toast('Texte copié'); } catch (x) { toast('Sélectionne le texte et copie-le.'); } } break; }
+    /* éditeur */
+    case 'cancel-edit': { const ok = await ask('Quitter sans enregistrer ?', 'Les modifications de cette recette seront perdues.', [{ label:'Quitter', value:true, kind:'danger' }, { label:'Continuer à modifier', value:false }]); if (ok) { S.draft = null; S.screen = S.from === 'list' ? 'list' : 'home'; render(); } break; }
+    case 'tab': { const to = b.dataset.tab; if (to === S.tab) break; if (S.tab === 'text') { try { readRaw(); S.editErr = ''; } catch (err) { S.editErr = err.message; render(); break; } } S.tab = to; render(); break; }
+    case 'add-ing': d.ingredients.push(''); render(); { const l = document.querySelectorAll('[data-f="ing"]'); l.length && l[l.length - 1].focus(); } break;
+    case 'del-ing': d.ingredients.splice(i, 1); render(); break;
+    case 'add-mat': d.materiel.push(''); render(); { const l = document.querySelectorAll('[data-f="mat"]'); l.length && l[l.length - 1].focus(); } break;
+    case 'del-mat': d.materiel.splice(i, 1); render(); break;
+    case 'dict': dictField(b); break;
+    case 'photo': photoInput.click(); break;
+    case 'ph-cancel': if (S.phCtl) S.phCtl.abort(); break;
+    case 'add-step': d.etapes.push(blankStep()); render(); { const l = document.querySelectorAll('[data-f="instr"]'); if (l.length) { l[l.length - 1].focus(); l[l.length - 1].scrollIntoView({ block:'center' }); } } break;
+    case 'del-step': { const ok = d.etapes[s].instruction.trim() ? await ask(`Supprimer l’étape ${s + 1} ?`, '', [{ label:'Supprimer', value:true, kind:'danger' }, { label:'Garder', value:false }]) : true; if (ok) { d.etapes.splice(s, 1); if (!d.etapes.length) d.etapes.push(blankStep()); render(); } break; }
+    case 'up': if (s > 0) { [d.etapes[s - 1], d.etapes[s]] = [d.etapes[s], d.etapes[s - 1]]; render(); } break;
+    case 'down': if (s < d.etapes.length - 1) { [d.etapes[s + 1], d.etapes[s]] = [d.etapes[s], d.etapes[s + 1]]; render(); } break;
+    case 'add-note': d.etapes[s].notes.push(''); render(); { const ta = document.querySelector(`textarea[data-f="note"][data-s="${s}"][data-n="${d.etapes[s].notes.length - 1}"]`); ta && ta.focus(); } break;
+    case 'del-note': d.etapes[s].notes.splice(k, 1); render(); break;
+    case 'dictate': dictateNote(s); break;
+    case 'save': {
+      if (S.tab === 'text') { try { readRaw(); } catch (err) { S.editErr = err.message; render(); break; } }
+      const dr = S.draft; clean(dr);
+      const err = !dr.titre ? 'Donne un nom à la recette.' : !dr.etapes.length ? 'Ajoute au moins une étape avec une instruction.' : !allIngr(dr).length ? 'Ajoute au moins un ingrédient.' : '';
+      if (err) { if (!dr.etapes.length) dr.etapes.push(blankStep()); if (!dr.ingredients.length) dr.ingredients.push(''); S.editErr = err; render(); window.scrollTo(0, 0); break; }
+      const idx = dr.id ? S.recipes.findIndex(x => x.id === dr.id) : -1;
+      if (idx >= 0) S.recipes[idx] = dr; else { dr.id = dr.id || uid(); S.recipes.push(dr); }
+      persist(); S.draft = null; S.screen = 'list'; render(); window.scrollTo(0, 0); toast('Recette enregistrée'); break;
+    }
+    /* cuisson */
+    case 'quit': quitCook(); break;
+    case 'por-minus': setPortions(S.cook.portions - 1); break;
+    case 'por-plus': setPortions(S.cook.portions + 1); break;
+    case 'mic':
+      ensureAudio();
+      if (V.state === 'unsupported') sheet(`<h3>Commande vocale indisponible</h3><p>Ce navigateur ne propose pas la reconnaissance vocale. Ouvre la page dans Chrome sur Android pour piloter la recette à la voix ; en attendant, les boutons font tout.</p><div class="acts"><button class="btn" data-act="close-sheet">Compris</button></div>`);
+      else if (V.state === 'on') stopVoice();
+      else { if (V.state === 'denied') V.state = 'off'; startVoice(); }
+      break;
+    case 'next': ensureAudio(); finishStep(); break;
+    case 'prev': prevStep(); break;
+    case 'repeat': repeatStep(); break;
+    case 't-start': ensureAudio(); tStart(); break;
+    case 't-pause': tPause(); break;
+    case 't-add': ensureAudio(); tAdd(); break;
+    case 't-reset': tReset(); break;
+    case 'alarm-stop': stopAlarm(); break;
+    case 'note': startNote(); break;
+    case 'note-end': endNoteListen(); break;
+    case 'note-keep': keepNote(); break;
+    case 'note-cancel': cancelNote(); break;
+    case 'typenote-add': { const t = (sheetText || '').trim(); if (t && S.cook && S.cook.i >= 0) { S.cook.r.etapes[S.cook.i].notes.push(cap(t)); persist(); render(); toast('Note ajoutée à l’étape'); } break; }
+  }
+});
+document.addEventListener('input', e => {
+  const t = e.target, f = t.dataset.f;
+  if (t.id === 'q') { S.q = t.value; $('#rows').innerHTML = rowsHtml(); return; }
+  if (f === 'notetext' && S.cook && S.cook.note) { S.cook.note.text = t.value; clearTimeout(S.cook.note.timer); const h = $('#auto-hint'); if (h) h.textContent = 'Touche « Garder » pour ajouter la note.'; return; }
+  if (f === 'matv' && S.cook) { S.cook.mat[S.cook.mats[+t.dataset.k]] = t.value; const me = $('#matest'); if (me) me.textContent = matEstText(); return; }
+  const d = S.draft; if (!d || !f) return;
+  const s = +t.dataset.s, k = +t.dataset.n;
+  if (f === 'titre' || f === 'description') d[f] = t.value;
+  else if (f === 'portions') d.portions = parseInt(t.value, 10) || null;
+  else if (f === 'ing') d.ingredients[+t.dataset.i] = t.value;
+  else if (f === 'instr') d.etapes[s].instruction = t.value;
+  else if (f === 'tmin' || f === 'tsec') { const card = t.closest('.stepcard'); const mi = +card.querySelector('[data-f="tmin"]').value || 0, se = +card.querySelector('[data-f="tsec"]').value || 0; d.etapes[s].temps = (mi * 60 + se) || null; }
+  else if (f === 'sing') d.etapes[s].ingredients = t.value.split('\n');
+  else if (f === 'smat') d.etapes[s].materiel = t.value.split('\n');
+  else if (f === 'mat') d.materiel[+t.dataset.i] = t.value;
+  else if (f === 'note') d.etapes[s].notes[k] = t.value;
+});
+document.addEventListener('change', e => {
+  const k = e.target.dataset && e.target.dataset.setting;
+  if (k) { S.settings[k] = e.target.checked; store(SKEY, S.settings); }
+  const sid = e.target.dataset && e.target.dataset.shop;
+  if (sid) { if (e.target.checked) { const r = find(sid); S.shop.sel[sid] = (r && r.portions) || 1; } else delete S.shop.sel[sid]; render(); }
+  const sk = e.target.dataset && e.target.dataset.skip;
+  if (sk) { if (e.target.checked) delete S.shop.skip[sk]; else S.shop.skip[sk] = true; e.target.closest('label').classList.toggle('off', !e.target.checked); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#sheet')) { const s = $('#sheet'); closeSheet(); s._res && s._res(null); } });
+
+/* ---------- Dictée des champs ---------- */
+const MIC = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>`;
+const CAM = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>`;
+function micBtn(target, join){ return SR ? `<button type="button" class="iconbtn" data-act="dict" data-target="${target}" data-join="${join}" aria-label="Dicter ce champ">${MIC}</button>` : ''; }
+let dictRec = null;
+function dictField(btn){
+  const el = document.getElementById(btn.dataset.target); if (!el || !SR) return;
+  if (dictRec) { const same = dictRec._btn === btn; try { dictRec.stop(); } catch (e) {} if (same) return; }
+  const base = el.value.replace(/\s+$/, ''), sep = btn.dataset.join === 'line' ? '\n' : ' ';
+  const rec = new SR(); rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = false;
+  rec._btn = btn; dictRec = rec; btn.classList.add('rec');
+  rec.onresult = e => {
+    let t = ''; for (const res of e.results) t += res[0].transcript; t = t.trim(); if (!t) return;
+    el.value = base ? base + sep + (sep === '\n' ? cap(t) : t) : cap(t);
+    el.dispatchEvent(new Event('input', { bubbles:true }));
+  };
+  rec.onerror = e => { if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e.error)) toast('Micro refusé : autorise-le pour cette page.'); };
+  rec.onend = () => { btn.classList.remove('rec'); if (dictRec === rec) dictRec = null; };
+  try { rec.start(); } catch (e) { btn.classList.remove('rec'); dictRec = null; }
+}
+
+/* ---------- Recette depuis une photo ---------- */
+const photoInput = document.createElement('input');
+photoInput.type = 'file'; photoInput.accept = 'image/*'; photoInput.multiple = true; photoInput.hidden = true;
+document.body.appendChild(photoInput);
+let sampleP = null;
+function getSample(){
+  if (!sampleP) sampleP = (window.claude && typeof window.claude.use === 'function') ? window.claude.use('sample').catch(() => null) : Promise.resolve(null);
+  return sampleP;
+}
+async function initPhoto(){
+  const smp = await getSample(); if (!smp) return;
+  const lim = await smp.limits().catch(() => null);
+  if (!lim || !lim.images) return;
+  S.photoLim = lim.images; photoInput.accept = lim.images.mediaTypes.join(',');
+  const ae = document.activeElement;
+  if (S.screen === 'editor' && !(ae && ae.matches && ae.matches('input, textarea'))) render();
+}
+photoInput.addEventListener('change', () => {
+  const files = [...photoInput.files].slice(0, (S.photoLim && S.photoLim.maxCount) || 1);
+  photoInput.value = '';
+  if (files.length) readPhoto(files);
+});
+const PHOTO_PROMPT = `Tu lis la ou les photos d'une recette de cuisine (page de livre, fiche, écran ou note manuscrite). Transcris la recette en français au format texte à marqueurs ci-dessous et ne réponds rien d'autre : ni introduction, ni commentaire, ni bloc de code.
+
+Format, un marqueur en début de ligne :
+Recette : nom de la recette
+Description : une phrase, seulement si la photo en donne une
+Portions : un nombre, seulement s'il est indiqué
+Ingrédient : quantité en chiffres, unité et nom (une ligne par ingrédient, ex. « 320 g de riz », « 2 œufs »)
+Matériel : un ustensile ou appareil cité dans la recette (une ligne chacun)
+Étape : l'instruction de l'étape, sans numéro
+Temps : durée de l'étape qui précède (ex. 5 min, 1 h 30, 45 s), seulement si la recette l'indique pour cette étape
+Note : une astuce ou remarque de la recette liée à l'étape qui précède
+
+Règles : un marqueur par ligne, une ligne vide entre deux étapes, garde l'ordre des étapes, n'invente aucune quantité ni durée absente de la photo. Plusieurs photos forment une seule recette, dans l'ordre donné. Si aucune recette n'est lisible, réponds seulement : AUCUNE RECETTE`;
+async function readPhoto(files){
+  const smp = await getSample(); if (!smp) return;
+  const ctl = new AbortController(); S.phCtl = ctl;
+  sheet(`<h3>Lecture ${files.length > 1 ? 'des photos' : 'de la photo'}</h3><p id="ph-st">Claude lit la recette, cela peut prendre une minute…</p><textarea class="raw" id="ph-out" readonly aria-label="Texte lu sur la photo"></textarea><div class="acts"><button class="btn" data-act="ph-cancel">Annuler</button></div>`);
+  try {
+    const { text } = await smp(PHOTO_PROMPT, { images:files, signal:ctl.signal, onText:({ text }) => { const o = $('#ph-out'), st = $('#ph-st'); if (o) { o.value = text; o.scrollTop = o.scrollHeight; } if (st) st.textContent = 'Transcription en cours…'; } });
+    if (ctl.signal.aborted || S.screen !== 'editor') return;
+    const raw = String(text).replace(/```[a-z]*\n?/gi, '').trim();
+    if (/^AUCUNE RECETTE/i.test(raw)) throw { code:'empty' };
+    const { recipe } = parse(raw, { lenient:true });
+    if (!recipe.titre && !recipe.etapes.length) throw { code:'empty' };
+    const old = S.draft || {};
+    recipe.id = old.id || null; recipe.ecarts = old.ecarts || [];
+    if (!recipe.ingredients.length && !recipe.etapes.some(e => e.ingredients.length)) recipe.ingredients.push('');
+    if (!recipe.etapes.length) recipe.etapes.push(blankStep());
+    S.draft = recipe; S.tab = 'form';
+    S.editErr = 'Recette lue depuis la photo : vérifie les quantités, les temps et les étapes avant d’enregistrer.';
+    closeSheet(); render(); window.scrollTo(0, 0);
+  } catch (e) {
+    if (ctl.signal.aborted) return;
+    const code = e && e.code;
+    const msg = code === 'not_granted' ? 'La lecture de la photo n’a pas été autorisée.'
+      : code === 'empty' ? 'Aucune recette lisible sur cette photo. Essaie avec une photo plus nette et bien cadrée.'
+      : code === 'image_rejected' ? 'Cette image n’a pas pu être lue (format ou taille).'
+      : (!code && e && e.message) ? e.message : 'La lecture a échoué. Réessaie dans un instant.';
+    const st = $('#ph-st'); if (st) st.textContent = msg; else toast(msg);
+    const btn = $('#sheet [data-act="ph-cancel"]'); if (btn) btn.textContent = 'Fermer';
+  }
+}
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+loadRecipes();
+render();
+initPhoto();
+</script>
+</body>
+</html>
