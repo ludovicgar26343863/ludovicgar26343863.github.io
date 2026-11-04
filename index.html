@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Pas à pas</title>
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#2E5B45">
+<meta name="theme-color" content="#0B6E7A">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,9 +13,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#EDF1EB; --surface:#FFFFFF; --ink:#1D2A23; --muted:#55665C; --line:#D2DBD4;
-  --herb:#2E5B45; --herb-ink:#FFFFFF; --saffron:#DE9C0C; --saffron-soft:#F6E2AE;
-  --alert:#B5380F; --alert-ink:#FFFFFF; --scrim:rgba(12,18,15,.45);
+  --bg:#DDEEF2; --surface:#FFFFFF; --ink:#0D2A31; --muted:#4A6970; --line:#C5DCE2;
+  --herb:#0B6E7A; --herb-ink:#FFFFFF; --saffron:#2A93C9; --saffron-soft:#D5EBF5;
+  --alert:#B5380F; --alert-ink:#FFFFFF; --scrim:rgba(5,25,32,.45);
+  --g1:#0B8291; --g2:#0B5C92; --grad:linear-gradient(135deg,#0B8291 0%,#0B5C92 100%);
+  --bg-grad:linear-gradient(180deg,#EEF7F9 0%,#D6E9EF 100%); --bar:rgba(232,244,247,.9);
   --f-body:'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --f-head:'Bricolage Grotesque', 'Atkinson Hyperlegible', system-ui, sans-serif;
   --f-mono:ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -26,16 +28,20 @@
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bg:#121814; --surface:#1B231E; --ink:#ECF1EC; --muted:#A0B1A6; --line:#2E3A33;
-    --herb:#80C09B; --herb-ink:#0E1912; --saffron:#F2B632; --saffron-soft:#3B3013;
+    --bg:#0A1B22; --surface:#10262E; --ink:#E4F1F4; --muted:#8FB0B8; --line:#1E3C46;
+    --herb:#4CC0CC; --herb-ink:#04171B; --saffron:#5BB8E6; --saffron-soft:#123447;
     --alert:#F07444; --alert-ink:#1C0D06; --scrim:rgba(0,0,0,.6);
+    --g1:#0E8C9A; --g2:#1060A0; --grad:linear-gradient(135deg,#0E8C9A 0%,#1060A0 100%);
+    --bg-grad:linear-gradient(180deg,#0A1B22 0%,#0B2030 100%); --bar:rgba(10,27,36,.9);
     color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#121814; --surface:#1B231E; --ink:#ECF1EC; --muted:#A0B1A6; --line:#2E3A33;
-  --herb:#80C09B; --herb-ink:#0E1912; --saffron:#F2B632; --saffron-soft:#3B3013;
+  --bg:#0A1B22; --surface:#10262E; --ink:#E4F1F4; --muted:#8FB0B8; --line:#1E3C46;
+  --herb:#4CC0CC; --herb-ink:#04171B; --saffron:#5BB8E6; --saffron-soft:#123447;
   --alert:#F07444; --alert-ink:#1C0D06; --scrim:rgba(0,0,0,.6);
+    --g1:#0E8C9A; --g2:#1060A0; --grad:linear-gradient(135deg,#0E8C9A 0%,#1060A0 100%);
+    --bg-grad:linear-gradient(180deg,#0A1B22 0%,#0B2030 100%); --bar:rgba(10,27,36,.9);
   color-scheme:dark;
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
@@ -204,6 +210,16 @@ table.recap{width:100%;border-collapse:collapse}
 .toast{position:fixed;left:50%;bottom:calc(100px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:11px 18px;border-radius:12px;z-index:40;font-size:16px;max-width:90vw;text-align:center}
 .toast[hidden]{display:none}
 @media (prefers-reduced-motion: reduce){.mic.on .dot{animation:none}.dial .fill{transition:none}}
+/* Thème bleu canard */
+body{background:var(--bg-grad);min-height:100vh}
+.btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
+.choice.launch span{opacity:.9}
+.progress i{background:var(--grad)}
+.dial .fill{stroke:url(#tgrad)}
+.timer.done .dial .fill{stroke:var(--alert)}
+.savebar,.cookbar{background:var(--bar);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.stepper output{color:var(--herb)}
+.choice:not(.launch){border-left:5px solid var(--herb)}
 </style>
 </head>
 <body>
@@ -876,7 +892,7 @@ function vEditor(){
   const d = S.draft, isNew = !d.id || !find(d.id);
   const head = `<div class="topbar"><button class="btn ghost" data-act="cancel-edit">‹ Annuler</button><h2>${isNew ? 'Créer une recette' : 'Modifier la recette'}</h2></div>
   <div class="tabs" role="group" aria-label="Mode d’édition"><button data-act="tab" data-tab="form" aria-pressed="${S.tab === 'form'}">Formulaire</button><button data-act="tab" data-tab="text" aria-pressed="${S.tab === 'text'}">Texte à marqueurs</button></div>
-  ${S.photoLim ? `<button class="btn" data-act="photo" style="width:100%;margin-top:14px">${CAM} Remplir depuis une photo</button>` : ''}
+  <div class="row-btns" style="margin-top:14px"><button class="btn" data-act="photo" style="flex:1">${CAM} Depuis une photo</button><button class="btn" data-act="paste" style="flex:1">Coller un texte</button></div>
   ${S.editErr ? `<div class="error" role="alert">${esc(S.editErr)}</div>` : ''}`;
   const bar = `<div class="savebar"><button class="btn primary" data-act="save">Enregistrer la recette</button></div>`;
   if (S.tab === 'text') return head + `<p class="hint">Un marqueur en début de ligne : Recette, Description, Portions, Ingrédient, Matériel, Étape, Temps, Note. « Temps réel » et « Écart matériel » sont remplis par l’application.</p><textarea id="rawtext" class="raw" spellcheck="false" aria-label="Texte de la recette">${esc(serialize(d))}</textarea>` + bar;
@@ -917,7 +933,7 @@ function vCook(){
     <div class="cookbar"><button class="btn primary done-btn" data-act="next">Commencer</button></div>`;
   }
   const st = r.etapes[c.i], next = r.etapes[c.i + 1], t = c.t;
-  const timer = t ? `<div class="timer${t.done ? ' done' : ''}" id="timer"><div class="dial"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="track" cx="60" cy="60" r="54" fill="none" stroke-width="10"/><circle id="tfill" class="fill" cx="60" cy="60" r="54" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="${RING}" stroke-dashoffset="${RING * (1 - t.remaining / t.total)}"/></svg><div class="t" id="tval" role="timer">${fmtClock(t.remaining)}</div></div><div><p class="tlabel">Temps estimé${c.f !== 1 ? ` pour ${plural(c.portions, 'portion')}` : ''} : ${fmtDur(t.base)}</p><div class="ctl" id="tctl">${ctlHtml(t)}</div></div></div>`
+  const timer = t ? `<div class="timer${t.done ? ' done' : ''}" id="timer"><div class="dial"><svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="tgrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--g1)"/><stop offset="1" style="stop-color:var(--g2)"/></linearGradient></defs><circle class="track" cx="60" cy="60" r="54" fill="none" stroke-width="10"/><circle id="tfill" class="fill" cx="60" cy="60" r="54" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="${RING}" stroke-dashoffset="${RING * (1 - t.remaining / t.total)}"/></svg><div class="t" id="tval" role="timer">${fmtClock(t.remaining)}</div></div><div><p class="tlabel">Temps estimé${c.f !== 1 ? ` pour ${plural(c.portions, 'portion')}` : ''} : ${fmtDur(t.base)}</p><div class="ctl" id="tctl">${ctlHtml(t)}</div></div></div>`
     : `<div class="row-btns"><button class="btn mini" data-act="t-add">Ajouter un minuteur d’1 min</button></div>`;
   return top + `<div class="progress"><i style="width:${(c.i / n) * 100}%"></i></div>
   <p class="stepno">Étape ${c.i + 1} sur ${n}</p>
@@ -1126,6 +1142,8 @@ document.addEventListener('click', async e => {
     case 'del-mat': d.materiel.splice(i, 1); render(); break;
     case 'dict': dictField(b); break;
     case 'photo': photoInput.click(); break;
+    case 'paste': sheet(`<h3>Coller le texte d’une recette</h3><p>Copie le texte d’une page web, ou d’une photo avec Google Lens (il lit aussi l’écriture manuscrite), puis colle-le ici.</p><textarea id="pastetxt" rows="10" placeholder="Nom de la recette, ingrédients, préparation…"></textarea><div class="acts"><button class="btn primary" data-act="paste-go">Analyser le texte</button><button class="btn" data-act="close-sheet">Annuler</button></div>`); break;
+    case 'paste-go': applyRecipeText(textToMarkers(sheetText || ''), 'texte'); break;
     case 'ph-cancel': if (S.phCtl) S.phCtl.abort(); break;
     case 'add-step': d.etapes.push(blankStep()); render(); { const l = document.querySelectorAll('[data-f="instr"]'); if (l.length) { l[l.length - 1].focus(); l[l.length - 1].scrollIntoView({ block:'center' }); } } break;
     case 'del-step': { const ok = d.etapes[s].instruction.trim() ? await ask(`Supprimer l’étape ${s + 1} ?`, '', [{ label:'Supprimer', value:true, kind:'danger' }, { label:'Garder', value:false }]) : true; if (ok) { d.etapes.splice(s, 1); if (!d.etapes.length) d.etapes.push(blankStep()); render(); } break; }
@@ -1234,7 +1252,7 @@ async function initPhoto(){
   if (S.screen === 'editor' && !(ae && ae.matches && ae.matches('input, textarea'))) render();
 }
 photoInput.addEventListener('change', () => {
-  const files = [...photoInput.files].slice(0, (S.photoLim && S.photoLim.maxCount) || 1);
+  const files = [...photoInput.files].slice(0, (S.photoLim && S.photoLim.maxCount) || 4);
   photoInput.value = '';
   if (files.length) readPhoto(files);
 });
@@ -1251,7 +1269,130 @@ Temps : durée de l'étape qui précède (ex. 5 min, 1 h 30, 45 s), seulement si
 Note : une astuce ou remarque de la recette liée à l'étape qui précède
 
 Règles : un marqueur par ligne, une ligne vide entre deux étapes, garde l'ordre des étapes, n'invente aucune quantité ni durée absente de la photo. Plusieurs photos forment une seule recette, dans l'ordre donné. Si aucune recette n'est lisible, réponds seulement : AUCUNE RECETTE`;
+/* Lecture sur l'appareil (Tesseract) et analyse du texte */
+let tessP = null;
+function loadTess(){
+  if (!tessP) tessP = new Promise((res, rej) => {
+    if (window.Tesseract) return res(window.Tesseract);
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    sc.onload = () => window.Tesseract ? res(window.Tesseract) : rej(new Error('load'));
+    sc.onerror = () => { tessP = null; rej(new Error('load')); };
+    document.head.appendChild(sc);
+  });
+  return tessP;
+}
+function shrink(file, max = 2000){
+  return new Promise(res => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+      const g = cv.getContext('2d'); g.filter = 'grayscale(1) contrast(1.25)'; g.drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url); cv.toBlob(b => res(b || file), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); res(file); };
+    img.src = url;
+  });
+}
+function guessTime(t){
+  const m = norm(t).match(/(\d+(?:[.,]\d+)?)(?:\s*(?:a|-|ou)\s*(\d+(?:[.,]\d+)?))?\s*(h(?![a-z])|heures?|minutes?|min(?![a-z])|mn(?![a-z]))(?:\s*(\d+))?/);
+  if (!m) return null;
+  const n = parseFloat((m[2] || m[1]).replace(',', '.'));
+  return m[3].startsWith('h') ? Math.round(n * 3600 + (m[4] ? +m[4] * 60 : 0)) : Math.round(n * 60);
+}
+function textToMarkers(raw){
+  const txt = String(raw || '').replace(/\r/g, '');
+  if (/^\s*[ée]tape\s*:/im.test(txt)) return txt;
+  const lines = txt.split('\n').map(l => l.replace(/[ \t]+/g, ' ').trim()).filter(l => l && /[a-zA-Z0-9À-ÿ]/.test(l));
+  const H_ING = /^(les\s+)?ingr[ée]dients?\b/i, H_STEP = /^(la\s+)?(pr[ée]paration|[ée]tapes?|instructions?|r[ée]alisation|progression|m[ée]thode|d[ée]roulement)\b/i, H_MAT = /^(le\s+)?(mat[ée]riel|ustensiles?)\b/i;
+  const isHead = (re, l) => l.length < 45 && re.test(l);
+  const sawHeader = lines.some(l => isHead(H_ING, l) || isHead(H_STEP, l) || isHead(H_MAT, l));
+  const strip = l => l.replace(/^[-–—•*·▪●○◦✓☐]\s*/, '').trim();
+  let title = '', portions = null, mode = null;
+  const ing = [], mat = [], stepLines = [];
+  for (const l of lines) {
+    const pm = l.match(/pour\s+(\d+)\s*(personnes?|portions?|parts?|pers\b|couverts?)/i) || l.match(/^(\d+)\s*(personnes?|portions?|parts?)\b/i);
+    if (pm && !portions) portions = +pm[1];
+    const after = l.includes(':') ? l.split(':').slice(1).join(':').trim() : '';
+    if (isHead(H_ING, l) || (H_ING.test(l) && after)) { mode = 'ing'; if (after && !/^pour\b/i.test(after)) after.split(/\s*[,;]\s*/).filter(Boolean).forEach(x => ing.push(strip(x))); continue; }
+    if (isHead(H_MAT, l) || (H_MAT.test(l) && after)) { mode = 'mat'; if (after) after.split(/\s*[,;]\s*/).filter(Boolean).forEach(x => mat.push(cap(x))); continue; }
+    if (isHead(H_STEP, l)) { mode = 'step'; continue; }
+    if (pm && l.length < 45) continue;
+    if (!title && !mode && l.length <= 80) { title = l; continue; }
+    if (!mode) { if (sawHeader) continue; mode = 'auto'; }
+    if (mode === 'ing') ing.push(strip(l));
+    else if (mode === 'mat') strip(l).split(/\s*[,;]\s*/).filter(Boolean).forEach(x => mat.push(cap(x)));
+    else if (mode === 'step') stepLines.push(l);
+    else { const s2 = strip(l); if (splitQty(s2) && s2.length < 60) ing.push(s2); else stepLines.push(l); }
+  }
+  const numRe = /^(?:[ée]tape\s*)?(\d{1,2})\s*[.)\-–:]\s*/i;
+  const numbered = stepLines.some(l => numRe.test(l));
+  const steps = []; let cur = '';
+  const push = () => { const t = cur.trim(); if (t) steps.push(t); cur = ''; };
+  for (const l of stepLines) {
+    if (numbered) { if (numRe.test(l)) { push(); cur = l.replace(numRe, ''); } else cur += (cur ? ' ' : '') + strip(l); }
+    else { cur += (cur ? ' ' : '') + strip(l); if (/[.!]$/.test(l)) push(); }
+  }
+  push();
+  const out = [`Recette : ${title || 'Recette sans titre'}`];
+  if (portions) out.push(`Portions : ${portions}`);
+  if (ing.length) { out.push(''); ing.forEach(x => out.push(`Ingrédient : ${x}`)); }
+  if (mat.length) { out.push(''); mat.forEach(x => out.push(`Matériel : ${x}`)); }
+  steps.forEach(st => { out.push('', `Étape : ${st}`); const d = guessTime(st); if (d) out.push(`Temps : ${fmtDur(d)}`); });
+  return out.join('\n');
+}
+function applyRecipeText(markers, src){
+  let recipe;
+  try { recipe = parse(markers, { lenient:true }).recipe; } catch (e) { toast(e.message); return false; }
+  if (!recipe.etapes.length && !recipe.ingredients.length) { toast(src === 'photo' ? 'Aucun texte de recette reconnu sur la photo.' : 'Aucune recette reconnue dans ce texte.'); return false; }
+  const old = S.draft || {};
+  recipe.id = old.id || null; recipe.ecarts = old.ecarts || [];
+  if (!recipe.ingredients.length && !recipe.etapes.some(e => e.ingredients.length)) recipe.ingredients.push('');
+  if (!recipe.materiel.length) recipe.materiel.push('');
+  if (!recipe.etapes.length) recipe.etapes.push(blankStep());
+  S.draft = recipe; S.tab = 'form';
+  S.editErr = src === 'photo' ? 'Recette lue depuis la photo : la lecture automatique peut se tromper, vérifie chaque champ avant d’enregistrer.' : 'Recette analysée : vérifie les ingrédients, les étapes et les temps avant d’enregistrer.';
+  render(); window.scrollTo(0, 0);
+  return true;
+}
+async function readPhotoLocal(files){
+  let cancelled = false; S.phCtl = { abort(){ cancelled = true; } };
+  sheet(`<h3>Lecture ${files.length > 1 ? 'des photos' : 'de la photo'}</h3><p id="ph-st">Préparation de l’image…</p><div class="progress"><i id="ph-bar" style="width:3%"></i></div><p class="hint">La première fois, le module de lecture en français se télécharge (connexion internet nécessaire). Ensuite, tout se passe sur le téléphone.</p><div class="acts"><button class="btn" data-act="ph-cancel">Annuler</button></div>`);
+  const status = (msg, pct) => { const st = $('#ph-st'), bar = $('#ph-bar'); if (st) st.textContent = msg; if (bar && pct != null) bar.style.width = Math.max(3, Math.round(pct)) + '%'; };
+  let worker = null;
+  try {
+    const imgs = []; for (const f of files) imgs.push(await shrink(f));
+    if (cancelled) return;
+    status('Chargement du module de lecture…', 5);
+    const T = await loadTess();
+    let page = 0;
+    worker = await T.createWorker('fra', 1, { logger: m => {
+      if (cancelled) return;
+      if (m.status === 'recognizing text') status(`Lecture du texte${imgs.length > 1 ? ` (photo ${page + 1} sur ${imgs.length})` : ''}… ${Math.round(m.progress * 100)} %`, 30 + 70 * ((page + m.progress) / imgs.length));
+      else if (/traineddata/.test(m.status)) status('Téléchargement du français…', 5 + 20 * (m.progress || 0));
+      else status('Préparation de la lecture…', 28);
+    } });
+    const texts = [];
+    for (; page < imgs.length; page++) { if (cancelled) break; const { data } = await worker.recognize(imgs[page]); texts.push(data.text); }
+    await worker.terminate(); worker = null;
+    if (cancelled || S.screen !== 'editor') return;
+    const markers = textToMarkers(texts.join('\n'));
+    closeSheet();
+    applyRecipeText(markers, 'photo');
+  } catch (e) {
+    if (worker) { try { await worker.terminate(); } catch (x) {} }
+    if (cancelled) return;
+    status(e && e.message === 'load' ? 'Impossible de charger le module de lecture : vérifie ta connexion internet, nécessaire la première fois.' : 'La lecture a échoué. Essaie une photo plus nette, bien éclairée et cadrée sur le texte, ou utilise « Coller un texte » avec Google Lens.', 0);
+    const btn = $('#sheet [data-act="ph-cancel"]'); if (btn) btn.textContent = 'Fermer';
+  }
+}
 async function readPhoto(files){
+  const smp = await getSample();
+  if (smp && S.photoLim) return readPhotoClaude(files);
+  return readPhotoLocal(files);
+}
+async function readPhotoClaude(files){
   const smp = await getSample(); if (!smp) return;
   const ctl = new AbortController(); S.phCtl = ctl;
   sheet(`<h3>Lecture ${files.length > 1 ? 'des photos' : 'de la photo'}</h3><p id="ph-st">Claude lit la recette, cela peut prendre une minute…</p><textarea class="raw" id="ph-out" readonly aria-label="Texte lu sur la photo"></textarea><div class="acts"><button class="btn" data-act="ph-cancel">Annuler</button></div>`);
