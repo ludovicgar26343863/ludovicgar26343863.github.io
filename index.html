@@ -228,6 +228,25 @@ select{width:100%;font:inherit;font-size:17px;color:var(--ink);background:var(--
 .thead input[type="text"]{font-weight:700}
 .mrow.warn{border-style:dashed}
 
+/* Ticket : deux colonnes */
+.tk-head{display:grid;grid-template-columns:28px 1fr 16px 1fr;gap:8px;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:4px 14px 6px}
+.tk{background:var(--surface);border:1.5px solid var(--line);border-radius:16px;padding:12px 14px;margin-bottom:10px}
+.tk.none{border-style:dashed}
+.tk.off .tk-top{opacity:.45}
+.tk-top{display:grid;grid-template-columns:28px 1fr 16px 1fr;gap:8px;align-items:start}
+.tk-top input[type="checkbox"]{width:24px;height:24px;accent-color:var(--herb);margin:2px 0 0;padding:0}
+.tk-col{min-width:0}
+.tk-col b{display:block;font-size:16px;line-height:1.25;overflow-wrap:anywhere}
+.tk-col span{display:block;font-size:15px;color:var(--muted);margin-top:2px}
+.tk-col .muted{color:var(--muted)}
+.tk-arrow{color:var(--muted);padding-top:2px}
+.tk-bot{display:flex;gap:8px;align-items:center;margin-top:10px}
+.tk-bot select{margin:0;flex:1;min-width:0;font-size:15px}
+.tk-note{font-size:14px;color:var(--herb);margin-top:6px;font-weight:700}
+.mrow small + small{margin-top:0}
+.matv input{font-size:15px;padding:7px 10px;margin-top:6px}
+.matv .gaps{font-size:14px;margin-top:4px}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -387,7 +406,6 @@ function parse(text, opts = {}){
   });
   if (!opts.lenient) {
     if (!r.titre) throw new Error('Il manque la ligne « Recette : » avec le nom de la recette.');
-    if (!r.etapes.length) throw new Error('Il faut au moins une ligne « Étape : ».');
   }
   return { recipe:r };
 }
@@ -660,6 +678,7 @@ function setPortions(n){
   if (S.screen === 'cook' && c.i < 0) render();
 }
 function goStep(i){
+  if (!S.cook || !S.cook.r.etapes[i]) return;
   const c = S.cook; stopAlarm(); cancelNote(true);
   c.i = i; const st = c.r.etapes[i];
   const tt = st.temps ? Math.max(1, Math.round(st.temps * c.f)) : 0;
@@ -713,11 +732,11 @@ function recordMat(){
 function matIntro(c){
   if (!c.mats.length) return '';
   const gmv = load(MKEY, {});
-  return `<h3 class="sub">Matériel</h3>${c.mats.map((m, k) => {
+  return `<h3 class="sub">Matériel nécessaire</h3><ul class="inglist">${c.mats.map((m, k) => {
     const known = c.r.ecarts.filter(x => norm(x.item) === norm(m));
     const opts = [...new Set([...known.map(x => x.variant), gmv[norm(m)]].filter(Boolean))];
-    return `<div class="matrow"><label class="matname" for="mv-${k}">${esc(m)}</label><input id="mv-${k}" data-f="matv" data-k="${k}" list="dl-${k}" value="${esc(c.mat[m] || '')}" placeholder="Lequel ? ex. induction, fonte…" autocomplete="off"><datalist id="dl-${k}">${opts.map(o => `<option value="${esc(o)}">`).join('')}</datalist>${known.length ? `<ul class="gaps">${known.map(x => `<li>${esc(x.variant)} : ${gapText(x.avg)} en moyenne, sur ${x.n} fois</li>`).join('')}</ul>` : ''}</div>`;
-  }).join('')}`;
+    return `<li>${esc(m)}<div class="matv"><input id="mv-${k}" data-f="matv" data-k="${k}" list="dl-${k}" value="${esc(c.mat[m] || '')}" placeholder="Lequel ? (facultatif : induction, fonte…)" autocomplete="off" aria-label="Modèle de ${esc(m)} utilisé"><datalist id="dl-${k}">${opts.map(o => `<option value="${esc(o)}">`).join('')}</datalist>${known.length ? `<ul class="gaps">${known.map(x => `<li>${esc(x.variant)} : ${gapText(x.avg)} en moyenne, sur ${x.n} fois</li>`).join('')}</ul>` : ''}</div></li>`;
+  }).join('')}</ul>`;
 }
 function matEstText(){
   const c = S.cook; if (!c || !c.mats) return '';
@@ -873,16 +892,18 @@ function findPrice(name){
   return bs >= 0.5 ? best : null;
 }
 function makePrice(name, prix, qte, unite, extra = {}){
-  const [base, mult] = UMULT[unite] || UMULT['pièce'], q = qte > 0 ? qte : 1;
-  return { name:cap(String(name).trim()), prix, qte:q, unite, base, perBase:prix / (q * mult), date:extra.date || new Date().toISOString().slice(0, 10), source:extra.source || 'saisie', links:[...new Set(extra.links || [])] };
+  const [base, mult] = UMULT[unite] || UMULT['pièce'], q = qte > 0 ? qte : 1, ok = prix != null && !isNaN(prix);
+  return { name:cap(String(name).trim()), libelle:String(extra.libelle || '').trim(), prix:ok ? prix : null, qte:q, unite, base, perBase:ok ? prix / (q * mult) : null, date:extra.date || new Date().toISOString().slice(0, 10), source:extra.source || 'saisie', links:[...new Set(extra.links || [])] };
 }
 function upsertPrice(p){
   const i = S.prices.findIndex(x => norm(x.name) === norm(p.name));
-  if (i >= 0) { p.links = [...new Set([...(S.prices[i].links || []), ...p.links])]; S.prices[i] = p; } else S.prices.push(p);
+  if (i >= 0) { const o = S.prices[i]; p.links = [...new Set([...(o.links || []), ...p.links])]; if (!p.libelle) p.libelle = o.libelle || ''; S.prices[i] = p; } else S.prices.push(p);
 }
 const savePrices = () => store(PKEY, S.prices);
-const priceLabel = p => p.base === 'g' ? `${fmtEuro(p.perBase * 1000)} le kg` : p.base === 'ml' ? `${fmtEuro(p.perBase * 1000)} le litre` : `${fmtEuro(p.perBase)} la pièce`;
-const itemCost = it => { if (it.q == null) return null; const p = findPrice(it.name); return p && p.base === it.base ? it.q * p.perBase : null; };
+const fmtQ = n => String(Math.round(n * 1000) / 1000).replace('.', ',');
+const priceLabel = p => p.perBase == null ? 'Pas encore de prix' : p.base === 'g' ? `${fmtEuro(p.perBase * 1000)} le kg` : p.base === 'ml' ? `${fmtEuro(p.perBase * 1000)} le litre` : `${fmtEuro(p.perBase)} la pièce`;
+const pricePack = p => p && p.prix != null ? `${fmtEuro(p.prix)} pour ${fmtQ(p.qte)} ${p.unite}` : '';
+const itemCost = it => { if (it.q == null) return null; const p = findPrice(it.name); return p && p.perBase != null && p.base === it.base ? it.q * p.perBase : null; };
 function recipeCost(r, f){ let total = 0, known = 0, unknown = 0; allIngr(r).forEach(x => { const c = itemCost(shopItem(x, f)); if (c == null) unknown++; else { total += c; known++; } }); return { total, known, unknown }; }
 function costShort(r){ if (!S.prices.length) return ''; const c = recipeCost(r, 1); return c.known ? `, ≈ ${fmtEuro(c.total)}` : ''; }
 function costBox(r, c){
@@ -895,11 +916,12 @@ function ingNames(){ const seen = new Set(), out = []; S.recipes.forEach(r => al
 function bestIng(nom, names){ let best = '', bs = 0; names.forEach(n => { const sc = nameScore(nom, n); if (sc > bs) { bs = sc; best = n; } }); return bs >= 0.5 ? best : ''; }
 const fmtDateFr = d => { const x = new Date(d + 'T12:00:00'); return isNaN(x) ? d : x.toLocaleDateString('fr-FR', { day:'numeric', month:'short', year:'numeric' }); };
 function priceSheet(p, name){
-  const v = p || { name:name || '', prix:'', qte:1, unite:'kg' };
-  sheet(`<h3>${p ? 'Modifier le prix' : 'Ajouter un prix'}</h3>
-  <label class="lbl">Ingrédient<input id="pr-nom" value="${esc(v.name)}" placeholder="Riz arborio"></label>
-  <label class="lbl">Prix payé (€)<input id="pr-prix" inputmode="decimal" value="${v.prix === '' ? '' : String(v.prix).replace('.', ',')}" placeholder="2,49"></label>
-  <div class="tgrid" style="grid-template-columns:1fr 1fr"><label class="lbl">Pour une quantité de<input id="pr-qte" inputmode="decimal" value="${String(v.qte).replace('.', ',')}"></label><label class="lbl">Unité<select id="pr-unite">${UNIT_OPTS.map(u => `<option ${u === v.unite ? 'selected' : ''}>${u}</option>`).join('')}</select></label></div>
+  const v = p || { name:name || '', libelle:'', prix:null, qte:1, unite:'kg' };
+  sheet(`<h3>${p ? 'Modifier l’ingrédient' : 'Ajouter un ingrédient'}</h3>
+  <label class="lbl">Nom dans la recette<input id="pr-nom" value="${esc(v.name)}" placeholder="Riz arborio"></label>
+  <label class="lbl">Libellé sur le ticket de caisse<input id="pr-lib" value="${esc(v.libelle || '')}" placeholder="RIZ ARBORIO 1KG"></label>
+  <label class="lbl">Prix payé (€)<input id="pr-prix" inputmode="decimal" value="${v.prix == null ? '' : String(v.prix).replace('.', ',')}" placeholder="2,49"></label>
+  <div class="tgrid" style="grid-template-columns:1fr 1fr"><label class="lbl">Pour une quantité de<input id="pr-qte" inputmode="decimal" value="${fmtQ(v.qte)}"></label><label class="lbl">Unité<select id="pr-unite">${UNIT_OPTS.map(u => `<option ${u === v.unite ? 'selected' : ''}>${u}</option>`).join('')}</select></label></div>
   <div class="acts"><button class="btn primary" data-act="price-save" data-old="${esc(p ? p.name : '')}">Enregistrer</button><button class="btn" data-act="close-sheet">Annuler</button></div>`);
 }
 
@@ -1004,8 +1026,9 @@ function vCook(){
     <h3 class="sub">Ingrédients pour ${plural(c.portions, 'portion')}</h3>
     <ul class="inglist">${allIngr(r).map(x => `<li>${esc(scaleIngr(x, c.f))}</li>`).join('')}</ul>
     ${matIntro(c)}
-    <p class="next">${plural(n, 'étape')}. ${SR ? 'Dis « 6 portions » pour changer, puis « commencer ».' : ''}</p>
-    <div class="cookbar"><button class="btn primary done-btn" data-act="next">Commencer</button></div>`;
+    ${n ? `<p class="next">${plural(n, 'étape')}. ${SR ? 'Dis « 6 portions » pour changer, puis « commencer ».' : ''}</p>
+    <div class="cookbar"><button class="btn primary done-btn" data-act="next">Commencer</button></div>` : `<p class="next">Cette recette n’a pas encore d’étapes.</p>
+    <div class="cookbar"><button class="btn primary done-btn" data-act="cook-edit">Compléter la recette</button></div>`}`;
   }
   const st = r.etapes[c.i], next = r.etapes[c.i + 1], t = c.t;
   const timer = t ? `<div class="timer${t.done ? ' done' : ''}" id="timer"><div class="dial"><svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="tgrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--g1)"/><stop offset="1" style="stop-color:var(--g2)"/></linearGradient></defs><circle class="track" cx="60" cy="60" r="54" fill="none" stroke-width="10"/><circle id="tfill" class="fill" cx="60" cy="60" r="54" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="${RING}" stroke-dashoffset="${RING * (1 - t.remaining / t.total)}"/></svg><div class="t" id="tval" role="timer">${fmtClock(t.remaining)}</div></div><div><p class="tlabel">Temps estimé${c.f !== 1 ? ` pour ${plural(c.portions, 'portion')}` : ''} : ${fmtDur(t.base)}</p><div class="ctl" id="tctl">${ctlHtml(t)}</div></div></div>`
@@ -1202,14 +1225,23 @@ document.addEventListener('click', async e => {
     case 'price-edit': { const p = S.prices.find(x => x.name === b.dataset.name); if (p) priceSheet(p); break; }
     case 'price-del': { const nm = b.dataset.name; const ok = await ask('Supprimer ce prix ?', `Le prix de « ${nm} » ne servira plus au coût des plats.`, [{ label:'Supprimer', value:true, kind:'danger' }, { label:'Garder', value:false }]); if (ok) { S.prices = S.prices.filter(x => x.name !== nm); savePrices(); render(); } break; }
     case 'price-save': {
-      const nm = (sheetVals['pr-nom'] || '').trim(), prix = parseFloat((sheetVals['pr-prix'] || '').replace(',', '.')), qte = parseFloat((sheetVals['pr-qte'] || '1').replace(',', '.')) || 1;
-      if (!nm || !(prix >= 0)) { toast('Indique un nom et un prix.'); break; }
+      const nm = (sheetVals['pr-nom'] || '').trim(), pv = (sheetVals['pr-prix'] || '').trim(), prix = pv ? parseFloat(pv.replace(',', '.')) : null, qte = parseFloat((sheetVals['pr-qte'] || '1').replace(',', '.')) || 1;
+      if (!nm) { toast('Indique le nom de l’ingrédient.'); break; }
+      if (pv && !(prix >= 0)) { toast('Le prix n’est pas un nombre.'); break; }
       const old = b.dataset.old; if (old && norm(old) !== norm(nm)) S.prices = S.prices.filter(x => x.name !== old);
       const prev = S.prices.find(x => norm(x.name) === norm(nm));
-      upsertPrice(makePrice(nm, prix, qte, sheetVals['pr-unite'] || 'pièce', { links:prev ? prev.links : [] })); savePrices(); render(); toast('Prix enregistré'); break;
+      const np = makePrice(nm, prix, qte, sheetVals['pr-unite'] || 'pièce', { libelle:sheetVals['pr-lib'] || '', links:prev ? prev.links : [], date:prev && prix == null ? prev.date : undefined });
+      np.libelle = (sheetVals['pr-lib'] || '').trim();
+      upsertPrice(np); if (!np.libelle) { const q = S.prices.find(x => x.name === np.name); if (q) q.libelle = ''; }
+      savePrices(); render(); toast('Ingrédient enregistré'); break;
     }
     case 'scan': ticketInput.click(); break;
     case 'tk-save': saveTicket(); break;
+    case 'tk-fix': { const it = S.ticket && S.ticket.items[+b.dataset.i]; if (!it) break; sheet(`<h3>Corriger la ligne</h3><p>${esc(it.libelle)}</p>
+      <label class="lbl">Prix payé (€)<input id="fx-prix" inputmode="decimal" value="${String(it.prix).replace('.', ',')}"></label>
+      <div class="tgrid" style="grid-template-columns:1fr 1fr"><label class="lbl">Quantité<input id="fx-qte" inputmode="decimal" value="${fmtQ(it.qte)}"></label><label class="lbl">Unité<select id="fx-unite">${UNIT_OPTS.map(u => `<option ${u === it.unite ? 'selected' : ''}>${u}</option>`).join('')}</select></label></div>
+      <div class="acts"><button class="btn primary" data-act="tk-fix-save" data-i="${b.dataset.i}">Valider</button><button class="btn" data-act="close-sheet">Annuler</button></div>`); break; }
+    case 'tk-fix-save': { const it = S.ticket && S.ticket.items[+b.dataset.i]; if (!it) break; it.prix = parseFloat((sheetVals['fx-prix'] || '').replace(',', '.')) || 0; it.qte = parseFloat((sheetVals['fx-qte'] || '1').replace(',', '.')) || 1; it.unite = sheetVals['fx-unite'] || it.unite; it.detected = true; render(); break; }
     case 'tk-cancel': S.ticket = null; S.screen = 'prices'; render(); break;
     case 'go-manage': S.screen = 'manage'; render(); window.scrollTo(0, 0); break;
     case 'shop-minus': case 'shop-plus': { const p = S.shop.sel[id]; if (p == null) break; S.shop.sel[id] = Math.max(1, Math.min(50, p + (a === 'shop-plus' ? 1 : -1))); render(); break; }
@@ -1247,7 +1279,7 @@ document.addEventListener('click', async e => {
     case 'save': {
       if (S.tab === 'text') { try { readRaw(); } catch (err) { S.editErr = err.message; render(); break; } }
       const dr = S.draft; clean(dr);
-      const err = !dr.titre ? 'Donne un nom à la recette.' : !dr.etapes.length ? 'Ajoute au moins une étape avec une instruction.' : !allIngr(dr).length ? 'Ajoute au moins un ingrédient.' : '';
+      const err = !dr.titre ? 'Donne un nom à la recette.' : '';
       if (err) { if (!dr.etapes.length) dr.etapes.push(blankStep()); if (!dr.ingredients.length) dr.ingredients.push(''); S.editErr = err; render(); window.scrollTo(0, 0); break; }
       const idx = dr.id ? S.recipes.findIndex(x => x.id === dr.id) : -1;
       if (idx >= 0) S.recipes[idx] = dr; else { dr.id = dr.id || uid(); S.recipes.push(dr); }
@@ -1255,6 +1287,7 @@ document.addEventListener('click', async e => {
     }
     /* cuisson */
     case 'quit': quitCook(); break;
+    case 'cook-edit': { const id = S.cook.rid; stopAlarm(); stopVoice(); keepAwake(false); hush(); S.cook = null; S.screen = 'manage'; openEditor(id); break; }
     case 'por-minus': setPortions(S.cook.portions - 1); break;
     case 'por-plus': setPortions(S.cook.portions + 1); break;
     case 'mic':
@@ -1286,8 +1319,7 @@ document.addEventListener('input', e => {
   if (t.dataset.tk && S.ticket) {
     const i = +t.dataset.i, it = S.ticket.items[i], k = t.dataset.tk;
     if (k === 'on') { it.on = t.checked; const row = $('#tr-' + i); if (row) row.classList.toggle('off', !t.checked); }
-    else if (k === 'prix' || k === 'qte') it[k] = parseFloat(t.value.replace(',', '.')) || 0;
-    else it[k] = t.value;
+    else if (k === 'link') { it.link = t.value; it.how = t.value ? 'manuel' : null; it.on = !!t.value; render(); }
     return;
   }
   const d = S.draft; if (!d || !f) return;
@@ -1524,37 +1556,56 @@ async function readPhotoClaude(files){
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 /* ---------- Tickets de caisse ---------- */
 function vPrices(){
-  const missing = ingNames().filter(n => !findPrice(n));
+  const missing = ingNames().filter(n => { const p = findPrice(n); return !p || p.perBase == null; });
   const ps = [...S.prices].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
-  return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Prix des ingrédients</h2></div>
-  <div class="row-btns"><button class="btn primary" data-act="scan" style="flex:1">${CAM} Scanner un ticket</button><button class="btn" data-act="price-new" style="flex:1">Ajouter un prix</button></div>
+  return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Ingrédients et prix</h2></div>
+  <div class="row-btns"><button class="btn primary" data-act="scan" style="flex:1">${CAM} Scanner un ticket</button><button class="btn" data-act="price-new" style="flex:1">Ajouter un ingrédient</button></div>
   <p class="hint">Photographie le ticket à plat et bien éclairé, en une ou plusieurs photos s’il est long. Les prix lus mettent à jour les ingrédients et le coût des plats.</p>
   ${missing.length ? `<h3 class="sub">Sans prix (${missing.length})</h3>${missing.map(n => `<div class="mrow warn"><b>${esc(n)}</b><div class="mbtns"><button class="btn mini" data-act="price-new" data-name="${esc(n)}">Ajouter un prix</button></div></div>`).join('')}` : ''}
-  <h3 class="sub">Prix enregistrés${ps.length ? ` (${ps.length})` : ''}</h3>
-  ${ps.length ? ps.map(p => `<div class="mrow"><b>${esc(p.name)}</b><small>${priceLabel(p)}, ${p.source === 'ticket' ? 'ticket du' : 'saisi le'} ${fmtDateFr(p.date)}</small><div class="mbtns"><button class="btn mini" data-act="price-edit" data-name="${esc(p.name)}">Modifier</button><button class="btn mini danger" data-act="price-del" data-name="${esc(p.name)}">Supprimer</button></div></div>`).join('') : `<div class="empty"><p>Aucun prix pour l’instant. Scanne un ticket ou ajoute un prix à la main.</p></div>`}`;
+  <h3 class="sub">Ingrédients enregistrés${ps.length ? ` (${ps.length})` : ''}</h3>
+  ${ps.length ? ps.map(p => `<div class="mrow"><b>${esc(p.name)}</b><small>Ticket : ${p.libelle ? esc(p.libelle) : 'libellé non renseigné'}</small><small>${p.perBase == null ? 'Pas encore de prix' : `${priceLabel(p)}, ${p.source === 'ticket' ? 'ticket du' : 'saisi le'} ${fmtDateFr(p.date)}`}</small><div class="mbtns"><button class="btn mini" data-act="price-edit" data-name="${esc(p.name)}">Modifier</button><button class="btn mini danger" data-act="price-del" data-name="${esc(p.name)}">Supprimer</button></div></div>`).join('') : `<div class="empty"><p>Aucun ingrédient enregistré. Scanne un ticket ou ajoute un ingrédient à la main.</p></div>`}`;
+}
+function allIngNames(){ const seen = new Set(), out = []; [...ingNames(), ...S.prices.map(p => p.name)].forEach(n => { if (n && !seen.has(norm(n))) { seen.add(norm(n)); out.push(n); } }); return out.sort((a, b) => a.localeCompare(b, 'fr')); }
+function matchLabel(it, names){
+  const k = norm(it.libelle);
+  const ex = S.prices.find(p => p.libelle && norm(p.libelle) === k);
+  if (ex) return { link:ex.name, how:'exact' };
+  let best = '', bs = 0;
+  names.forEach(n => {
+    const p = S.prices.find(x => norm(x.name) === norm(n));
+    const sc = Math.max(nameScore(it.nom || it.libelle, n), nameScore(it.libelle, n), p && p.libelle ? nameScore(it.libelle, p.libelle) : 0);
+    if (sc > bs) { bs = sc; best = n; }
+  });
+  return bs >= 0.5 ? { link:best, how:'proposé' } : { link:'', how:null };
 }
 function vTicket(){
-  const t = S.ticket, names = ingNames(), n = t.items.length;
+  const t = S.ticket, names = allIngNames(), n = t.items.length, ok = t.items.filter(it => it.link).length;
   return `<div class="topbar"><button class="btn ghost" data-act="tk-cancel">‹ Annuler</button><h2>Ticket${t.date ? ` du ${fmtDateFr(t.date)}` : ''}</h2></div>
-  <p class="hint" style="margin-top:0">${plural(n, 'article')} ${n > 1 ? 'lus' : 'lu'}. Vérifie prix et quantités, associe chaque article à un ingrédient de tes recettes et décoche ce qui ne sert pas.</p>
-  ${t.items.map((it, i) => `<div class="trow${it.on ? '' : ' off'}" id="tr-${i}">
-    <div class="thead"><input type="checkbox" data-tk="on" data-i="${i}" ${it.on ? 'checked' : ''} aria-label="Utiliser cet article"><input type="text" data-tk="nom" data-i="${i}" value="${esc(it.nom)}" aria-label="Nom de l’article"></div>
-    <div class="tgrid"><label class="lbl">Prix (€)<input data-tk="prix" data-i="${i}" inputmode="decimal" value="${String(it.prix).replace('.', ',')}"></label><label class="lbl">Quantité<input data-tk="qte" data-i="${i}" inputmode="decimal" value="${String(it.qte).replace('.', ',')}"></label><label class="lbl">Unité<select data-tk="unite" data-i="${i}">${UNIT_OPTS.map(u => `<option ${u === it.unite ? 'selected' : ''}>${u}</option>`).join('')}</select></label></div>
-    <label class="lbl">Ingrédient correspondant<select data-tk="link" data-i="${i}"><option value="">Nouvel article (nom ci-dessus)</option>${names.map(x => `<option value="${esc(x)}" ${it.link === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
-  </div>`).join('')}
-  <div class="savebar"><button class="btn primary" data-act="tk-save">Mettre à jour les prix</button></div>`;
+  <p class="hint" style="margin-top:0">${plural(n, 'ligne')} ${n > 1 ? 'lues' : 'lue'}, ${ok} ${ok > 1 ? 'associées' : 'associée'} à un ingrédient. Coche les lignes à valider ; pour une ligne non associée, choisis l’ingrédient : le libellé du ticket lui sera affecté.</p>
+  <div class="tk-head"><span></span><span>Ticket</span><span></span><span>Ingrédient</span></div>
+  ${t.items.map((it, i) => { const p = it.link ? S.prices.find(x => norm(x.name) === norm(it.link)) : null; return `<div class="tk${it.link ? '' : ' none'}${it.link && !it.on ? ' off' : ''}" id="tr-${i}">
+    <div class="tk-top">${it.link ? `<input type="checkbox" data-tk="on" data-i="${i}" ${it.on ? 'checked' : ''} aria-label="Valider cette ligne">` : '<span></span>'}
+      <div class="tk-col"><b>${esc(it.libelle)}</b><span>${fmtEuro(it.prix)}${it.detected ? ` pour ${fmtQ(it.qte)} ${it.unite}` : ''}</span></div>
+      <span class="tk-arrow" aria-hidden="true">→</span>
+      <div class="tk-col">${it.link ? `<b>${esc(p && p.libelle ? p.libelle : it.link)}</b><span>${p && p.prix != null ? `Ancien : ${pricePack(p)}` : 'Pas encore de prix'}</span>` : `<b class="muted">Non associé</b><span>Choisis l’ingrédient</span>`}</div>
+    </div>
+    <div class="tk-bot"><select data-tk="link" data-i="${i}" aria-label="Ingrédient associé"><option value="">${it.link ? 'Ne pas associer' : 'Associer à un ingrédient…'}</option>${names.map(x => `<option value="${esc(x)}" ${norm(it.link) === norm(x) ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select><button class="btn mini" data-act="tk-fix" data-i="${i}">Corriger</button></div>
+    ${it.how === 'proposé' ? '<p class="tk-note">Correspondance proposée, à vérifier</p>' : it.how === 'manuel' ? '<p class="tk-note">Le libellé du ticket sera affecté à cet ingrédient</p>' : ''}
+  </div>`; }).join('')}
+  <div class="savebar"><button class="btn primary" data-act="tk-save">Valider les lignes cochées</button></div>`;
 }
 function saveTicket(){
   const t = S.ticket; let n = 0;
   t.items.forEach(it => {
-    if (!it.on || !(it.prix > 0)) return;
-    const nm = (it.link || it.nom || '').trim(); if (!nm) return;
-    const prev = S.prices.find(x => norm(x.name) === norm(nm));
-    upsertPrice(makePrice(nm, it.prix, it.qte || 1, it.unite || 'pièce', { date:t.date || undefined, source:'ticket', links:[...(prev ? prev.links : []), ...(it.link ? [norm(it.link)] : [])] }));
+    if (!it.on || !it.link || !(it.prix > 0)) return;
+    const prev = S.prices.find(x => norm(x.name) === norm(it.link));
+    const qte = !it.detected && prev && prev.prix != null ? prev.qte : it.qte || 1;
+    const unite = !it.detected && prev && prev.prix != null ? prev.unite : it.unite || 'pièce';
+    upsertPrice(makePrice(prev ? prev.name : it.link, it.prix, qte, unite, { libelle:it.libelle, date:t.date || undefined, source:'ticket', links:[...(prev ? prev.links : []), norm(it.link)] }));
     n++;
   });
   savePrices(); S.ticket = null; S.screen = 'prices'; render(); window.scrollTo(0, 0);
-  toast(n ? `${n} prix mis à jour` : 'Aucun prix enregistré');
+  toast(n ? `${n} prix mis à jour` : 'Aucune ligne validée');
 }
 function parseReceipt(text){
   const lines = String(text).split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
@@ -1565,16 +1616,16 @@ function parseReceipt(text){
   lines.forEach((l, i) => {
     const m = l.match(/^(.*?[A-Za-zÀ-ÿ].*?)\s+(\d+[.,]\d{2})\s*(?:€|eur)?\s*[A-Z0-9*]?\s*$/i);
     if (!m || SKIP.test(norm(l))) return;
-    let name = m[1].trim(); const prix = parseFloat(m[2].replace(',', '.'));
+    let name = m[1].trim(), libelle = name, detected = false; const prix = parseFloat(m[2].replace(',', '.'));
     if (!(prix > 0) || prix > 200) return;
     let qte = 1, unite = 'pièce';
     const wm = name.match(/(\d+(?:[.,]\d+)?)\s*(kg|g|l|cl|ml)\b/i);
-    if (wm) { qte = parseFloat(wm[1].replace(',', '.')); unite = wm[2].toLowerCase(); name = name.replace(wm[0], ' '); }
-    else { const xm = name.match(/\bx\s*(\d+)\b|\b(\d+)\s*x\b/i); if (xm) { qte = +(xm[1] || xm[2]); name = name.replace(xm[0], ' '); } }
-    if (!/[a-zà-ÿ]{3}/i.test(name.replace(/\b(kg|eur|x)\b/gi, '')) && i > 0) name = lines[i - 1].replace(/\s+\d+[.,]\d{2}.*$/, '');
+    if (wm) { qte = parseFloat(wm[1].replace(',', '.')); unite = wm[2].toLowerCase(); name = name.replace(wm[0], ' '); detected = true; }
+    else { const xm = name.match(/\bx\s*(\d+)\b|\b(\d+)\s*x\b/i); if (xm) { qte = +(xm[1] || xm[2]); name = name.replace(xm[0], ' '); detected = true; } }
+    if (!/[a-zà-ÿ]{3}/i.test(name.replace(/\b(kg|eur|x)\b/gi, '')) && i > 0) { name = lines[i - 1].replace(/\s+\d+[.,]\d{2}.*$/, ''); libelle = name; }
     name = name.replace(/[^a-zà-ÿ0-9' -]/gi, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
     if (name.length < 3) return;
-    items.push({ nom:cap(name), prix, qte, unite });
+    items.push({ libelle:libelle.replace(/\s+/g, ' ').trim(), nom:cap(name), prix, qte, unite, detected });
   });
   return { items, date };
 }
@@ -1594,12 +1645,14 @@ async function ocrRun(files, status, isCancelled){
   return texts.join('\n');
 }
 const TICKET_PROMPT = `Tu lis la photo d'un ticket de caisse de supermarché français (éventuellement en plusieurs photos, dans l'ordre). Réponds uniquement par un objet JSON, sans texte autour ni bloc de code, de la forme :
-{"date":"AAAA-MM-JJ","articles":[{"nom":"Riz arborio","prix":2.49,"quantite":1,"unite":"kg"}]}
+{"date":"AAAA-MM-JJ","articles":[{"libelle":"RIZ ARBORIO 1KG","nom":"Riz arborio","prix":2.49,"quantite":1,"unite":"kg","contenance_lue":true}]}
 date : la date du ticket si elle est lisible, sinon "".
 articles : uniquement les produits alimentaires achetés, une entrée par ligne du ticket.
+libelle : le texte de l'article exactement tel qu'imprimé sur le ticket, sans le prix.
 nom : le produit en clair et sans la marque ; développe une abréviation seulement si tu es sûr du sens.
 prix : le prix payé pour la ligne, en euros, nombre avec un point décimal.
 quantite et unite : le poids ou la contenance indiqués sur le ticket, unite parmi g, kg, ml, cl, l, pièce ; pour un article pesé, le poids acheté ; pour un lot (ex. x6), quantite 6 et unite pièce ; si rien n'est indiqué, quantite 1 et unite pièce.
+contenance_lue : true si le poids, la contenance ou le nombre de pièces figure sur le ticket, sinon false.
 Ignore les totaux, sous-totaux, remises, TVA, fidélité, moyens de paiement et articles non alimentaires. Si aucun ticket n'est lisible : {"date":"","articles":[]}`;
 const ticketInput = document.createElement('input');
 ticketInput.type = 'file'; ticketInput.accept = 'image/*'; ticketInput.multiple = true; ticketInput.hidden = true;
@@ -1619,7 +1672,7 @@ async function readTicket(files){
       const raw = String(text), a = raw.indexOf('{'), z = raw.lastIndexOf('}');
       const obj = a >= 0 ? JSON.parse(raw.slice(a, z + 1)) : {};
       date = obj.date || '';
-      items = (obj.articles || []).map(x => ({ nom:cap(String(x.nom || '').trim()), prix:+x.prix || 0, qte:+x.quantite || 1, unite:UNIT_OPTS.includes(x.unite) ? x.unite : 'pièce' })).filter(x => x.nom);
+      items = (obj.articles || []).map(x => ({ libelle:String(x.libelle || x.nom || '').trim(), nom:cap(String(x.nom || x.libelle || '').trim()), prix:+x.prix || 0, qte:+x.quantite || 1, unite:UNIT_OPTS.includes(x.unite) ? x.unite : 'pièce', detected:!!x.contenance_lue })).filter(x => x.libelle);
     } else {
       const txt = await ocrRun(files, status, () => cancelled);
       if (cancelled) return;
@@ -1627,8 +1680,8 @@ async function readTicket(files){
     }
     if (cancelled) return;
     if (!items.length) throw { code:'empty' };
-    const names = ingNames();
-    S.ticket = { date, items:items.map(it => ({ ...it, on:true, link:bestIng(it.nom, names) })) };
+    const names = allIngNames();
+    S.ticket = { date, items:items.map(it => { const m = matchLabel(it, names); return { ...it, link:m.link, how:m.how, on:!!m.link }; }) };
     closeSheet(); S.screen = 'ticket'; render(); window.scrollTo(0, 0);
   } catch (e) {
     if (cancelled) return;
