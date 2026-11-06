@@ -247,6 +247,9 @@ select{width:100%;font:inherit;font-size:17px;color:var(--ink);background:var(--
 .matv input{font-size:15px;padding:7px 10px;margin-top:6px}
 .matv .gaps{font-size:14px;margin-top:4px}
 
+.vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);pointer-events:none}
+label.btn{cursor:pointer;position:relative}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -936,7 +939,7 @@ function vHome(){
   <button class="choice" data-act="go-prices"><strong>Scan ticket</strong><span>Mettre à jour le prix des ingrédients et le coût des plats</span></button>
   ${SR ? '' : `<p class="hint">La commande vocale n’est pas disponible dans ce navigateur : les boutons font tout. Pour l’essayer, ouvre la page dans Chrome sur ton téléphone.</p>`}
   <h2 class="sec">Fichiers</h2>
-  <div class="stack"><button class="btn" data-act="import">Importer un fichier .recette.txt</button><button class="btn" data-act="export-template">Exporter le modèle vide</button></div>
+  <div class="stack"><label class="btn">Importer un fichier .recette.txt<input type="file" accept=".txt,text/plain" multiple data-file="import" class="vh"></label><button class="btn" data-act="export-template">Exporter le modèle vide</button></div>
   <h2 class="sec">Réglages</h2>
   ${toggle('lire', 'Lire les étapes à voix haute')}
   ${toggle('autoMinuteur', 'Démarrer le minuteur automatiquement')}
@@ -988,7 +991,7 @@ function vEditor(){
   const d = S.draft, isNew = !d.id || !find(d.id);
   const head = `<div class="topbar"><button class="btn ghost" data-act="cancel-edit">‹ Annuler</button><h2>${isNew ? 'Créer une recette' : 'Modifier la recette'}</h2></div>
   <div class="tabs" role="group" aria-label="Mode d’édition"><button data-act="tab" data-tab="form" aria-pressed="${S.tab === 'form'}">Formulaire</button><button data-act="tab" data-tab="text" aria-pressed="${S.tab === 'text'}">Texte à marqueurs</button></div>
-  <div class="row-btns" style="margin-top:14px"><button class="btn" data-act="photo" style="flex:1">${CAM} Depuis une photo</button><button class="btn" data-act="paste" style="flex:1">Coller un texte</button></div>
+  <div class="row-btns" style="margin-top:14px"><label class="btn" style="flex:1">${CAM} Depuis une photo<input type="file" accept="image/*" multiple data-file="photo" class="vh"></label><button class="btn" data-act="paste" style="flex:1">Coller un texte</button></div>
   ${S.editErr ? `<div class="error" role="alert">${esc(S.editErr)}</div>` : ''}`;
   const bar = `<div class="savebar"><button class="btn primary" data-act="save">Enregistrer la recette</button></div>`;
   if (S.tab === 'text') return head + `<p class="hint">Un marqueur en début de ligne : Recette, Description, Portions, Ingrédient, Matériel, Étape, Temps, Note. « Temps réel » et « Écart matériel » sont remplis par l’application.</p><textarea id="rawtext" class="raw" spellcheck="false" aria-label="Texte de la recette">${esc(serialize(d))}</textarea>` + bar;
@@ -1187,8 +1190,8 @@ async function exportText(name, text){
 const fileInput = document.createElement('input');
 fileInput.type = 'file'; fileInput.accept = '.txt,text/plain'; fileInput.multiple = true; fileInput.hidden = true;
 document.body.appendChild(fileInput);
-fileInput.addEventListener('change', async () => {
-  const files = [...fileInput.files]; fileInput.value = '';
+fileInput.addEventListener('change', () => { const files = [...fileInput.files]; fileInput.value = ''; importFiles(files); });
+async function importFiles(files){
   let ok = 0; const errs = [];
   for (const f of files) {
     try {
@@ -1204,7 +1207,7 @@ fileInput.addEventListener('change', async () => {
   persist(); render();
   if (errs.length) sheet(`<h3>Certains fichiers n’ont pas été importés</h3><ul>${errs.map(x => `<li>${esc(x)}</li>`).join('')}</ul><div class="acts"><button class="btn" data-act="close-sheet">Fermer</button></div>`);
   else if (ok) toast(ok > 1 ? `${ok} recettes importées` : 'Recette importée');
-});
+}
 
 /* ---------- Événements ---------- */
 document.addEventListener('click', async e => {
@@ -1335,6 +1338,15 @@ document.addEventListener('input', e => {
   else if (f === 'note') d.etapes[s].notes[k] = t.value;
 });
 document.addEventListener('change', e => {
+  const fk = e.target.dataset && e.target.dataset.file;
+  if (fk) {
+    const files = [...(e.target.files || [])]; e.target.value = '';
+    if (!files.length) return;
+    if (fk === 'ticket') readTicket(files.slice(0, 4));
+    else if (fk === 'photo') readPhoto(files.slice(0, (S.photoLim && S.photoLim.maxCount) || 4));
+    else if (fk === 'import') importFiles(files);
+    return;
+  }
   const k = e.target.dataset && e.target.dataset.setting;
   if (k) { S.settings[k] = e.target.checked; store(SKEY, S.settings); }
   const sid = e.target.dataset && e.target.dataset.shop;
@@ -1559,7 +1571,8 @@ function vPrices(){
   const missing = ingNames().filter(n => { const p = findPrice(n); return !p || p.perBase == null; });
   const ps = [...S.prices].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
   return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Ingrédients et prix</h2></div>
-  <div class="row-btns"><button class="btn primary" data-act="scan" style="flex:1">${CAM} Scanner un ticket</button><button class="btn" data-act="price-new" style="flex:1">Ajouter un ingrédient</button></div>
+  <div class="row-btns"><label class="btn primary" style="flex:1">${CAM} Photographier le ticket<input type="file" accept="image/*" capture="environment" data-file="ticket" class="vh"></label><label class="btn" style="flex:1">Choisir des images<input type="file" accept="image/*" multiple data-file="ticket" class="vh"></label></div>
+  <div class="row-btns"><button class="btn" data-act="price-new" style="flex:1">Ajouter un ingrédient</button></div>
   <p class="hint">Photographie le ticket à plat et bien éclairé, en une ou plusieurs photos s’il est long. Les prix lus mettent à jour les ingrédients et le coût des plats.</p>
   ${missing.length ? `<h3 class="sub">Sans prix (${missing.length})</h3>${missing.map(n => `<div class="mrow warn"><b>${esc(n)}</b><div class="mbtns"><button class="btn mini" data-act="price-new" data-name="${esc(n)}">Ajouter un prix</button></div></div>`).join('')}` : ''}
   <h3 class="sub">Ingrédients enregistrés${ps.length ? ` (${ps.length})` : ''}</h3>
