@@ -210,6 +210,24 @@ table.recap{width:100%;border-collapse:collapse}
 .toast{position:fixed;left:50%;bottom:calc(100px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:11px 18px;border-radius:12px;z-index:40;font-size:16px;max-width:90vw;text-align:center}
 .toast[hidden]{display:none}
 @media (prefers-reduced-motion: reduce){.mic.on .dot{animation:none}.dial .fill{transition:none}}
+/* Gestion des recettes */
+.mrow{background:var(--surface);border:1.5px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px}
+.mrow b{display:block;font-size:19px;line-height:1.25}
+.mrow small{display:block;color:var(--muted);font-size:15px;margin-top:2px}
+.mbtns{display:flex;gap:8px;margin-top:12px}
+.mbtns .btn{flex:1}
+
+/* Prix et tickets */
+.tgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}
+.tgrid .lbl{margin:0}
+select{width:100%;font:inherit;font-size:17px;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:10px 8px;margin-top:6px}
+.trow{background:var(--surface);border:1.5px solid var(--line);border-radius:16px;padding:12px 14px;margin-bottom:10px}
+.trow.off{opacity:.45}
+.thead{display:flex;gap:10px;align-items:center}
+.thead input[type="checkbox"]{width:24px;height:24px;flex:none;accent-color:var(--herb);margin:0;padding:0}
+.thead input[type="text"]{font-weight:700}
+.mrow.warn{border-style:dashed}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -495,7 +513,7 @@ Temps : 2 min
 const S = {
   recipes: [],
   settings: Object.assign({ lire:true, autoMinuteur:false, lireNotes:false }, load(SKEY, {})),
-  screen:'home', q:'', draft:null, tab:'form', editErr:'', from:'home', cook:null, shop:{ sel:{}, skip:{} }, shopText:''
+  screen:'home', q:'', draft:null, tab:'form', editErr:'', from:'home', cook:null, shop:{ sel:{}, skip:{} }, shopText:'', prices:[], ticket:null
 };
 function persist(){ store(KEY, S.recipes.map(r => ({ id:r.id, texte:serialize(r) }))); }
 function loadRecipes(){
@@ -838,14 +856,62 @@ function typeNoteSheet(){
   sheet(`<h3>Ajouter une note</h3><p>Elle sera enregistrée avec cette étape.</p><textarea id="typenote" rows="4"></textarea><div class="acts"><button class="btn primary" data-act="typenote-add">Ajouter la note</button><button class="btn" data-act="close-sheet">Annuler</button></div>`);
 }
 
+/* ---------- Prix ---------- */
+const PKEY = 'pasapas:prix';
+const UMULT = { kg:['g', 1000], g:['g', 1], l:['ml', 1000], cl:['ml', 10], ml:['ml', 1], 'pièce':['', 1] };
+const UNIT_OPTS = ['kg', 'g', 'l', 'cl', 'ml', 'pièce'];
+const fmtEuro = n => n.toLocaleString('fr-FR', { style:'currency', currency:'EUR' });
+const keyWords = t => words(String(t).replace(/œ/gi, 'oe').replace(/æ/gi, 'ae')).filter(w => w.length >= 3 && !STOP.has(w)).map(stem);
+const wmatch = (a, b) => { if (a === b) return true; const n = Math.min(5, a.length, b.length); return n >= 4 && a.slice(0, n) === b.slice(0, n); };
+function nameScore(a, b){ const A = keyWords(a), B = keyWords(b); if (!A.length || !B.length) return 0; const hit = B.filter(w => A.some(v => wmatch(v, w))).length; return hit / B.length; }
+function findPrice(name){
+  const k = norm(name); let best = null, bs = 0;
+  for (const p of S.prices) {
+    if (norm(p.name) === k || (p.links || []).includes(k)) return p;
+    const sc = nameScore(name, p.name); if (sc > bs) { bs = sc; best = p; }
+  }
+  return bs >= 0.5 ? best : null;
+}
+function makePrice(name, prix, qte, unite, extra = {}){
+  const [base, mult] = UMULT[unite] || UMULT['pièce'], q = qte > 0 ? qte : 1;
+  return { name:cap(String(name).trim()), prix, qte:q, unite, base, perBase:prix / (q * mult), date:extra.date || new Date().toISOString().slice(0, 10), source:extra.source || 'saisie', links:[...new Set(extra.links || [])] };
+}
+function upsertPrice(p){
+  const i = S.prices.findIndex(x => norm(x.name) === norm(p.name));
+  if (i >= 0) { p.links = [...new Set([...(S.prices[i].links || []), ...p.links])]; S.prices[i] = p; } else S.prices.push(p);
+}
+const savePrices = () => store(PKEY, S.prices);
+const priceLabel = p => p.base === 'g' ? `${fmtEuro(p.perBase * 1000)} le kg` : p.base === 'ml' ? `${fmtEuro(p.perBase * 1000)} le litre` : `${fmtEuro(p.perBase)} la pièce`;
+const itemCost = it => { if (it.q == null) return null; const p = findPrice(it.name); return p && p.base === it.base ? it.q * p.perBase : null; };
+function recipeCost(r, f){ let total = 0, known = 0, unknown = 0; allIngr(r).forEach(x => { const c = itemCost(shopItem(x, f)); if (c == null) unknown++; else { total += c; known++; } }); return { total, known, unknown }; }
+function costShort(r){ if (!S.prices.length) return ''; const c = recipeCost(r, 1); return c.known ? `, ≈ ${fmtEuro(c.total)}` : ''; }
+function costBox(r, c){
+  if (!S.prices.length) return '';
+  const k = recipeCost(r, c.f);
+  if (!k.known) return `<p class="porhint">Coût : aucun ingrédient de cette recette n’a encore de prix.</p>`;
+  return `<div class="totals"><span>Coût estimé</span><b>${fmtEuro(k.total)}</b></div><p class="porhint">Soit ${fmtEuro(k.total / c.portions)} par portion${k.unknown ? `, sans compter ${plural(k.unknown, 'ingrédient')} sans prix` : ''}.</p>`;
+}
+function ingNames(){ const seen = new Set(), out = []; S.recipes.forEach(r => allIngr(r).forEach(x => { const n = shopItem(x, 1).name; if (n && !seen.has(norm(n))) { seen.add(norm(n)); out.push(n); } })); return out.sort((a, b) => a.localeCompare(b, 'fr')); }
+function bestIng(nom, names){ let best = '', bs = 0; names.forEach(n => { const sc = nameScore(nom, n); if (sc > bs) { bs = sc; best = n; } }); return bs >= 0.5 ? best : ''; }
+const fmtDateFr = d => { const x = new Date(d + 'T12:00:00'); return isNaN(x) ? d : x.toLocaleDateString('fr-FR', { day:'numeric', month:'short', year:'numeric' }); };
+function priceSheet(p, name){
+  const v = p || { name:name || '', prix:'', qte:1, unite:'kg' };
+  sheet(`<h3>${p ? 'Modifier le prix' : 'Ajouter un prix'}</h3>
+  <label class="lbl">Ingrédient<input id="pr-nom" value="${esc(v.name)}" placeholder="Riz arborio"></label>
+  <label class="lbl">Prix payé (€)<input id="pr-prix" inputmode="decimal" value="${v.prix === '' ? '' : String(v.prix).replace('.', ',')}" placeholder="2,49"></label>
+  <div class="tgrid" style="grid-template-columns:1fr 1fr"><label class="lbl">Pour une quantité de<input id="pr-qte" inputmode="decimal" value="${String(v.qte).replace('.', ',')}"></label><label class="lbl">Unité<select id="pr-unite">${UNIT_OPTS.map(u => `<option ${u === v.unite ? 'selected' : ''}>${u}</option>`).join('')}</select></label></div>
+  <div class="acts"><button class="btn primary" data-act="price-save" data-old="${esc(p ? p.name : '')}">Enregistrer</button><button class="btn" data-act="close-sheet">Annuler</button></div>`);
+}
+
 /* ---------- Écrans ---------- */
 function vHome(){
   const n = S.recipes.length;
   const toggle = (k, label) => `<label class="toggle"><span>${label}</span><input type="checkbox" data-setting="${k}" ${S.settings[k] ? 'checked' : ''}></label>`;
   return `
   <button class="choice launch" data-act="go-list"><strong>Lancer une recette</strong><span>Choisir parmi ${plural(n, 'recette')}</span></button>
-  <button class="choice create" data-act="go-create"><strong>Créer une recette</strong><span>Au formulaire, à la voix, en texte ou depuis une photo</span></button>
+  <button class="choice create" data-act="go-manage"><strong>Gestion des recettes</strong><span>Créer, modifier ou supprimer une recette</span></button>
   <button class="choice" data-act="go-shop"><strong>Courses</strong><span>La liste des ingrédients à acheter, envoyée vers Notes</span></button>
+  <button class="choice" data-act="go-prices"><strong>Scan ticket</strong><span>Mettre à jour le prix des ingrédients et le coût des plats</span></button>
   ${SR ? '' : `<p class="hint">La commande vocale n’est pas disponible dans ce navigateur : les boutons font tout. Pour l’essayer, ouvre la page dans Chrome sur ton téléphone.</p>`}
   <h2 class="sec">Fichiers</h2>
   <div class="stack"><button class="btn" data-act="import">Importer un fichier .recette.txt</button><button class="btn" data-act="export-template">Exporter le modèle vide</button></div>
@@ -861,7 +927,15 @@ function rowsHtml(){
     .sort((a, b) => a.titre.localeCompare(b.titre, 'fr'));
   if (!S.recipes.length) return `<div class="empty"><p>Aucune recette pour l’instant.</p><div class="row-btns" style="justify-content:center"><button class="btn primary" data-act="go-create">Créer une recette</button></div></div>`;
   if (!rs.length) return `<div class="empty"><p>Aucune recette ne correspond à « ${esc(S.q)} ».</p></div>`;
-  return rs.map(r => { const est = estTotal(r); return `<div class="rrow"><button class="main" data-act="cook" data-id="${r.id}"><b>${esc(r.titre)}</b><small>${plural(r.etapes.length, 'étape')}${est ? `, ${fmtDur(est)} estimées` : ''}</small></button><button class="iconbtn" data-act="menu" data-id="${r.id}" aria-label="Options pour ${esc(r.titre)}">⋯</button></div>`; }).join('');
+  return rs.map(r => { const est = estTotal(r); return `<div class="rrow"><button class="main" data-act="cook" data-id="${r.id}"><b>${esc(r.titre)}</b><small>${plural(r.etapes.length, 'étape')}${est ? `, ${fmtDur(est)} estimées` : ''}${costShort(r)}</small></button><button class="iconbtn" data-act="menu" data-id="${r.id}" aria-label="Options pour ${esc(r.titre)}">⋯</button></div>`; }).join('');
+}
+function vManage(){
+  const rs = [...S.recipes].sort((a, b) => a.titre.localeCompare(b.titre, 'fr'));
+  return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Gestion des recettes</h2></div>
+  <button class="btn primary" data-act="go-create" style="width:100%">Créer une nouvelle recette</button>
+  <p class="hint">Au formulaire, à la voix, en collant un texte ou depuis une photo.</p>
+  <h3 class="sub">${rs.length ? `Mes recettes (${rs.length})` : 'Mes recettes'}</h3>
+  ${rs.length ? rs.map(r => `<div class="mrow"><b>${esc(r.titre)}</b><small>${plural(r.etapes.length, 'étape')}${r.portions ? `, ${plural(r.portions, 'portion')}` : ''}${costShort(r)}</small><div class="mbtns"><button class="btn mini" data-act="edit" data-id="${r.id}">Modifier</button><button class="btn mini danger" data-act="delete" data-id="${r.id}">Supprimer</button></div></div>`).join('') : `<div class="empty"><p>Aucune recette pour l’instant.</p></div>`}`;
 }
 function vList(){
   return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Lancer une recette</h2></div>
@@ -926,6 +1000,7 @@ function vCook(){
     <p class="porhint">${r.portions ? `Recette prévue pour ${plural(r.portions, 'portion')}${c.f !== 1 ? ` : quantités et temps ${ratio}` : ''}.` : 'La recette n’indique pas de portions : 1 correspond aux quantités d’origine.'}</p>
     <div class="totals"><span>Temps total estimé</span><b>${est ? fmtDur(est) : 'non renseigné'}</b></div>
     <p class="porhint" id="matest">${matEstText()}</p>
+    ${costBox(r, c)}
     <h3 class="sub">Ingrédients pour ${plural(c.portions, 'portion')}</h3>
     <ul class="inglist">${allIngr(r).map(x => `<li>${esc(scaleIngr(x, c.f))}</li>`).join('')}</ul>
     ${matIntro(c)}
@@ -969,14 +1044,15 @@ function buildShop(){
   });
   return { used, items:[...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr')) };
 }
-const shopLabel = it => it.q == null ? it.name : `${it.name} : ${fmtShopQty(it.q, it.base)}`;
+const shopLabel = it => { const c = itemCost(it); return (it.q == null ? it.name : `${it.name} : ${fmtShopQty(it.q, it.base)}`) + (c != null ? ` (≈ ${fmtEuro(c)})` : ''); };
+const shopTotal = items => { const cs = items.filter(it => !S.shop.skip[it.key]).map(itemCost).filter(x => x != null); return cs.length ? cs.reduce((a, b) => a + b, 0) : null; };
 function vShop(){
   const { items } = buildShop();
   const rs = [...S.recipes].sort((a, b) => a.titre.localeCompare(b.titre, 'fr'));
   return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Liste de courses</h2></div>
   <p class="hint" style="margin-top:0">Coche les recettes et choisis le nombre de portions : les quantités s’additionnent.</p>
   ${rs.map(r => { const p = S.shop.sel[r.id], on = p != null; return `<div class="shoprow${on ? ' on' : ''}"><label class="pick"><input type="checkbox" data-shop="${r.id}" ${on ? 'checked' : ''}><span><b>${esc(r.titre)}</b><small>${r.portions ? `Prévue pour ${plural(r.portions, 'portion')}` : 'Portions non renseignées'}</small></span></label>${on ? `<div class="stepper"><button class="iconbtn" data-act="shop-minus" data-id="${r.id}" aria-label="Une portion de moins" ${p <= 1 ? 'disabled' : ''}>−</button><output>${p}</output><button class="iconbtn" data-act="shop-plus" data-id="${r.id}" aria-label="Une portion de plus" ${p >= 50 ? 'disabled' : ''}>+</button><span class="unit">${p > 1 ? 'portions' : 'portion'}</span></div>` : ''}</div>`; }).join('')}
-  ${items.length ? `<h3 class="sub">À acheter</h3><ul class="shoplist">${items.map(it => { const off = S.shop.skip[it.key]; return `<li><label class="${off ? 'off' : ''}"><input type="checkbox" data-skip="${esc(it.key)}" ${off ? '' : 'checked'}><span>${esc(shopLabel(it))}</span></label></li>`; }).join('')}</ul><p class="hint">Décoche ce que tu as déjà. « Envoyer vers Notes » ouvre le menu de partage : choisis Samsung Notes pour créer une nouvelle note avec la liste.</p>` : `<div class="empty"><p>Coche une ou plusieurs recettes pour composer la liste.</p></div>`}
+  ${items.length ? `<h3 class="sub">À acheter</h3><ul class="shoplist">${items.map(it => { const off = S.shop.skip[it.key]; return `<li><label class="${off ? 'off' : ''}"><input type="checkbox" data-skip="${esc(it.key)}" ${off ? '' : 'checked'}><span>${esc(shopLabel(it))}</span></label></li>`; }).join('')}</ul>${(t => t != null ? `<div class="totals"><span>Total estimé</span><b>${fmtEuro(t)}</b></div>` : '')(shopTotal(items))}<p class="hint">Décoche ce que tu as déjà. « Envoyer vers Notes » ouvre le menu de partage : choisis Samsung Notes pour créer une nouvelle note avec la liste.</p>` : `<div class="empty"><p>Coche une ou plusieurs recettes pour composer la liste.</p></div>`}
   <div class="savebar"><button class="btn primary" data-act="shop-send" ${items.length ? '' : 'disabled'}>Envoyer vers Notes</button></div>`;
 }
 async function sendShop(){
@@ -984,7 +1060,7 @@ async function sendShop(){
   const keep = items.filter(it => !S.shop.skip[it.key]);
   if (!keep.length) { toast('Tout est décoché : rien à envoyer.'); return; }
   const date = new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
-  const text = `Liste de courses du ${date}\nPour : ${used.join(', ')}\n\n${keep.map(it => `☐ ${shopLabel(it)}`).join('\n')}\n`;
+  const text = `Liste de courses du ${date}\nPour : ${used.join(', ')}\n\n${keep.map(it => `☐ ${shopLabel(it)}`).join('\n')}\n${(t => t != null ? `\nTotal estimé : ${fmtEuro(t)}\n` : '')(shopTotal(items))}`;
   S.shopText = text;
   if (navigator.share) {
     try { await navigator.share({ title:'Liste de courses', text }); toast('Liste envoyée'); return; }
@@ -993,7 +1069,7 @@ async function sendShop(){
   sheet(`<h3>Liste de courses</h3><p>Le partage direct vers Notes n’est pas disponible dans cette vue. Copie la liste et colle-la dans une nouvelle note, ou enregistre-la en fichier.</p><textarea class="raw" readonly>${esc(text)}</textarea><div class="acts"><button class="btn primary" data-act="copy">Copier la liste</button><button class="btn" data-act="shop-save">Enregistrer en fichier .txt</button><button class="btn" data-act="close-sheet">Fermer</button></div>`);
 }
 function render(){
-  const v = { home:vHome, list:vList, editor:vEditor, cook:vCook, recap:vRecap, shop:vShop }[S.screen];
+  const v = { home:vHome, list:vList, editor:vEditor, cook:vCook, recap:vRecap, shop:vShop, manage:vManage, prices:vPrices, ticket:vTicket }[S.screen];
   app.innerHTML = v();
   document.body.dataset.screen = S.screen;
   if (S.screen === 'cook') updMic();
@@ -1113,6 +1189,7 @@ document.addEventListener('click', async e => {
   const a = b.dataset.act, id = b.dataset.id, s = +b.dataset.s, k = +b.dataset.n, i = +b.dataset.i;
   const inSheet = !!b.closest('#sheet');
   const sheetText = inSheet ? ($('#sheet textarea') || {}).value : '';
+  const sheetVals = {}; if (inSheet) document.querySelectorAll('#sheet [id]').forEach(el => { if ('value' in el) sheetVals[el.id] = el.value; });
   if (inSheet && a !== 'copy') closeSheet();
   const d = S.draft;
   switch (a) {
@@ -1120,6 +1197,21 @@ document.addEventListener('click', async e => {
     case 'go-list': S.screen = 'list'; render(); window.scrollTo(0, 0); break;
     case 'go-create': openEditor(null); break;
     case 'go-shop': S.screen = 'shop'; render(); window.scrollTo(0, 0); break;
+    case 'go-prices': S.screen = 'prices'; render(); window.scrollTo(0, 0); break;
+    case 'price-new': priceSheet(null, b.dataset.name || ''); break;
+    case 'price-edit': { const p = S.prices.find(x => x.name === b.dataset.name); if (p) priceSheet(p); break; }
+    case 'price-del': { const nm = b.dataset.name; const ok = await ask('Supprimer ce prix ?', `Le prix de « ${nm} » ne servira plus au coût des plats.`, [{ label:'Supprimer', value:true, kind:'danger' }, { label:'Garder', value:false }]); if (ok) { S.prices = S.prices.filter(x => x.name !== nm); savePrices(); render(); } break; }
+    case 'price-save': {
+      const nm = (sheetVals['pr-nom'] || '').trim(), prix = parseFloat((sheetVals['pr-prix'] || '').replace(',', '.')), qte = parseFloat((sheetVals['pr-qte'] || '1').replace(',', '.')) || 1;
+      if (!nm || !(prix >= 0)) { toast('Indique un nom et un prix.'); break; }
+      const old = b.dataset.old; if (old && norm(old) !== norm(nm)) S.prices = S.prices.filter(x => x.name !== old);
+      const prev = S.prices.find(x => norm(x.name) === norm(nm));
+      upsertPrice(makePrice(nm, prix, qte, sheetVals['pr-unite'] || 'pièce', { links:prev ? prev.links : [] })); savePrices(); render(); toast('Prix enregistré'); break;
+    }
+    case 'scan': ticketInput.click(); break;
+    case 'tk-save': saveTicket(); break;
+    case 'tk-cancel': S.ticket = null; S.screen = 'prices'; render(); break;
+    case 'go-manage': S.screen = 'manage'; render(); window.scrollTo(0, 0); break;
     case 'shop-minus': case 'shop-plus': { const p = S.shop.sel[id]; if (p == null) break; S.shop.sel[id] = Math.max(1, Math.min(50, p + (a === 'shop-plus' ? 1 : -1))); render(); break; }
     case 'shop-send': sendShop(); break;
     case 'shop-save': exportText('liste-de-courses.txt', S.shopText); break;
@@ -1134,7 +1226,7 @@ document.addEventListener('click', async e => {
     case 'close-sheet': break;
     case 'copy': { const ta = $('#sheet textarea'); try { await navigator.clipboard.writeText(ta.value); toast('Texte copié'); } catch (err) { ta.select(); try { document.execCommand('copy'); toast('Texte copié'); } catch (x) { toast('Sélectionne le texte et copie-le.'); } } break; }
     /* éditeur */
-    case 'cancel-edit': { const ok = await ask('Quitter sans enregistrer ?', 'Les modifications de cette recette seront perdues.', [{ label:'Quitter', value:true, kind:'danger' }, { label:'Continuer à modifier', value:false }]); if (ok) { S.draft = null; S.screen = S.from === 'list' ? 'list' : 'home'; render(); } break; }
+    case 'cancel-edit': { const ok = await ask('Quitter sans enregistrer ?', 'Les modifications de cette recette seront perdues.', [{ label:'Quitter', value:true, kind:'danger' }, { label:'Continuer à modifier', value:false }]); if (ok) { S.draft = null; S.screen = ['list', 'manage'].includes(S.from) ? S.from : 'home'; render(); } break; }
     case 'tab': { const to = b.dataset.tab; if (to === S.tab) break; if (S.tab === 'text') { try { readRaw(); S.editErr = ''; } catch (err) { S.editErr = err.message; render(); break; } } S.tab = to; render(); break; }
     case 'add-ing': d.ingredients.push(''); render(); { const l = document.querySelectorAll('[data-f="ing"]'); l.length && l[l.length - 1].focus(); } break;
     case 'del-ing': d.ingredients.splice(i, 1); render(); break;
@@ -1159,7 +1251,7 @@ document.addEventListener('click', async e => {
       if (err) { if (!dr.etapes.length) dr.etapes.push(blankStep()); if (!dr.ingredients.length) dr.ingredients.push(''); S.editErr = err; render(); window.scrollTo(0, 0); break; }
       const idx = dr.id ? S.recipes.findIndex(x => x.id === dr.id) : -1;
       if (idx >= 0) S.recipes[idx] = dr; else { dr.id = dr.id || uid(); S.recipes.push(dr); }
-      persist(); S.draft = null; S.screen = 'list'; render(); window.scrollTo(0, 0); toast('Recette enregistrée'); break;
+      persist(); S.draft = null; S.screen = S.from === 'manage' ? 'manage' : 'list'; render(); window.scrollTo(0, 0); toast('Recette enregistrée'); break;
     }
     /* cuisson */
     case 'quit': quitCook(); break;
@@ -1191,6 +1283,13 @@ document.addEventListener('input', e => {
   if (t.id === 'q') { S.q = t.value; $('#rows').innerHTML = rowsHtml(); return; }
   if (f === 'notetext' && S.cook && S.cook.note) { S.cook.note.text = t.value; clearTimeout(S.cook.note.timer); const h = $('#auto-hint'); if (h) h.textContent = 'Touche « Garder » pour ajouter la note.'; return; }
   if (f === 'matv' && S.cook) { S.cook.mat[S.cook.mats[+t.dataset.k]] = t.value; const me = $('#matest'); if (me) me.textContent = matEstText(); return; }
+  if (t.dataset.tk && S.ticket) {
+    const i = +t.dataset.i, it = S.ticket.items[i], k = t.dataset.tk;
+    if (k === 'on') { it.on = t.checked; const row = $('#tr-' + i); if (row) row.classList.toggle('off', !t.checked); }
+    else if (k === 'prix' || k === 'qte') it[k] = parseFloat(t.value.replace(',', '.')) || 0;
+    else it[k] = t.value;
+    return;
+  }
   const d = S.draft; if (!d || !f) return;
   const s = +t.dataset.s, k = +t.dataset.n;
   if (f === 'titre' || f === 'description') d[f] = t.value;
@@ -1209,7 +1308,7 @@ document.addEventListener('change', e => {
   const sid = e.target.dataset && e.target.dataset.shop;
   if (sid) { if (e.target.checked) { const r = find(sid); S.shop.sel[sid] = (r && r.portions) || 1; } else delete S.shop.sel[sid]; render(); }
   const sk = e.target.dataset && e.target.dataset.skip;
-  if (sk) { if (e.target.checked) delete S.shop.skip[sk]; else S.shop.skip[sk] = true; e.target.closest('label').classList.toggle('off', !e.target.checked); }
+  if (sk) { if (e.target.checked) delete S.shop.skip[sk]; else S.shop.skip[sk] = true; render(); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#sheet')) { const s = $('#sheet'); closeSheet(); s._res && s._res(null); } });
 
@@ -1423,6 +1522,122 @@ async function readPhotoClaude(files){
 }
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+/* ---------- Tickets de caisse ---------- */
+function vPrices(){
+  const missing = ingNames().filter(n => !findPrice(n));
+  const ps = [...S.prices].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Prix des ingrédients</h2></div>
+  <div class="row-btns"><button class="btn primary" data-act="scan" style="flex:1">${CAM} Scanner un ticket</button><button class="btn" data-act="price-new" style="flex:1">Ajouter un prix</button></div>
+  <p class="hint">Photographie le ticket à plat et bien éclairé, en une ou plusieurs photos s’il est long. Les prix lus mettent à jour les ingrédients et le coût des plats.</p>
+  ${missing.length ? `<h3 class="sub">Sans prix (${missing.length})</h3>${missing.map(n => `<div class="mrow warn"><b>${esc(n)}</b><div class="mbtns"><button class="btn mini" data-act="price-new" data-name="${esc(n)}">Ajouter un prix</button></div></div>`).join('')}` : ''}
+  <h3 class="sub">Prix enregistrés${ps.length ? ` (${ps.length})` : ''}</h3>
+  ${ps.length ? ps.map(p => `<div class="mrow"><b>${esc(p.name)}</b><small>${priceLabel(p)}, ${p.source === 'ticket' ? 'ticket du' : 'saisi le'} ${fmtDateFr(p.date)}</small><div class="mbtns"><button class="btn mini" data-act="price-edit" data-name="${esc(p.name)}">Modifier</button><button class="btn mini danger" data-act="price-del" data-name="${esc(p.name)}">Supprimer</button></div></div>`).join('') : `<div class="empty"><p>Aucun prix pour l’instant. Scanne un ticket ou ajoute un prix à la main.</p></div>`}`;
+}
+function vTicket(){
+  const t = S.ticket, names = ingNames(), n = t.items.length;
+  return `<div class="topbar"><button class="btn ghost" data-act="tk-cancel">‹ Annuler</button><h2>Ticket${t.date ? ` du ${fmtDateFr(t.date)}` : ''}</h2></div>
+  <p class="hint" style="margin-top:0">${plural(n, 'article')} ${n > 1 ? 'lus' : 'lu'}. Vérifie prix et quantités, associe chaque article à un ingrédient de tes recettes et décoche ce qui ne sert pas.</p>
+  ${t.items.map((it, i) => `<div class="trow${it.on ? '' : ' off'}" id="tr-${i}">
+    <div class="thead"><input type="checkbox" data-tk="on" data-i="${i}" ${it.on ? 'checked' : ''} aria-label="Utiliser cet article"><input type="text" data-tk="nom" data-i="${i}" value="${esc(it.nom)}" aria-label="Nom de l’article"></div>
+    <div class="tgrid"><label class="lbl">Prix (€)<input data-tk="prix" data-i="${i}" inputmode="decimal" value="${String(it.prix).replace('.', ',')}"></label><label class="lbl">Quantité<input data-tk="qte" data-i="${i}" inputmode="decimal" value="${String(it.qte).replace('.', ',')}"></label><label class="lbl">Unité<select data-tk="unite" data-i="${i}">${UNIT_OPTS.map(u => `<option ${u === it.unite ? 'selected' : ''}>${u}</option>`).join('')}</select></label></div>
+    <label class="lbl">Ingrédient correspondant<select data-tk="link" data-i="${i}"><option value="">Nouvel article (nom ci-dessus)</option>${names.map(x => `<option value="${esc(x)}" ${it.link === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+  </div>`).join('')}
+  <div class="savebar"><button class="btn primary" data-act="tk-save">Mettre à jour les prix</button></div>`;
+}
+function saveTicket(){
+  const t = S.ticket; let n = 0;
+  t.items.forEach(it => {
+    if (!it.on || !(it.prix > 0)) return;
+    const nm = (it.link || it.nom || '').trim(); if (!nm) return;
+    const prev = S.prices.find(x => norm(x.name) === norm(nm));
+    upsertPrice(makePrice(nm, it.prix, it.qte || 1, it.unite || 'pièce', { date:t.date || undefined, source:'ticket', links:[...(prev ? prev.links : []), ...(it.link ? [norm(it.link)] : [])] }));
+    n++;
+  });
+  savePrices(); S.ticket = null; S.screen = 'prices'; render(); window.scrollTo(0, 0);
+  toast(n ? `${n} prix mis à jour` : 'Aucun prix enregistré');
+}
+function parseReceipt(text){
+  const lines = String(text).split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const SKIP = /total|sous.?total|tva|\bcb\b|carte|espece|rendu|remise|reduc|avantage|fidelit|a payer|montant|caisse|magasin|merci|siret|\btel\b|nombre d|articles|cagnotte|bon d|ticket/;
+  const dm = String(text).match(/\b(\d{2})[\/.-](\d{2})[\/.-](\d{2,4})\b/);
+  const date = dm ? `${dm[3].length === 2 ? '20' + dm[3] : dm[3]}-${dm[2]}-${dm[1]}` : '';
+  const items = [];
+  lines.forEach((l, i) => {
+    const m = l.match(/^(.*?[A-Za-zÀ-ÿ].*?)\s+(\d+[.,]\d{2})\s*(?:€|eur)?\s*[A-Z0-9*]?\s*$/i);
+    if (!m || SKIP.test(norm(l))) return;
+    let name = m[1].trim(); const prix = parseFloat(m[2].replace(',', '.'));
+    if (!(prix > 0) || prix > 200) return;
+    let qte = 1, unite = 'pièce';
+    const wm = name.match(/(\d+(?:[.,]\d+)?)\s*(kg|g|l|cl|ml)\b/i);
+    if (wm) { qte = parseFloat(wm[1].replace(',', '.')); unite = wm[2].toLowerCase(); name = name.replace(wm[0], ' '); }
+    else { const xm = name.match(/\bx\s*(\d+)\b|\b(\d+)\s*x\b/i); if (xm) { qte = +(xm[1] || xm[2]); name = name.replace(xm[0], ' '); } }
+    if (!/[a-zà-ÿ]{3}/i.test(name.replace(/\b(kg|eur|x)\b/gi, '')) && i > 0) name = lines[i - 1].replace(/\s+\d+[.,]\d{2}.*$/, '');
+    name = name.replace(/[^a-zà-ÿ0-9' -]/gi, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (name.length < 3) return;
+    items.push({ nom:cap(name), prix, qte, unite });
+  });
+  return { items, date };
+}
+async function ocrRun(files, status, isCancelled){
+  const imgs = []; for (const f of files) imgs.push(await shrink(f, 2400));
+  status('Chargement du module de lecture…', 5);
+  const T = await loadTess();
+  let page = 0;
+  const worker = await T.createWorker('fra', 1, { logger: m => {
+    if (isCancelled()) return;
+    if (m.status === 'recognizing text') status(`Lecture du texte… ${Math.round(m.progress * 100)} %`, 30 + 70 * ((page + m.progress) / imgs.length));
+    else if (/traineddata/.test(m.status)) status('Téléchargement du français…', 5 + 20 * (m.progress || 0));
+  } });
+  const texts = [];
+  try { for (; page < imgs.length; page++) { if (isCancelled()) break; const { data } = await worker.recognize(imgs[page]); texts.push(data.text); } }
+  finally { try { await worker.terminate(); } catch (e) {} }
+  return texts.join('\n');
+}
+const TICKET_PROMPT = `Tu lis la photo d'un ticket de caisse de supermarché français (éventuellement en plusieurs photos, dans l'ordre). Réponds uniquement par un objet JSON, sans texte autour ni bloc de code, de la forme :
+{"date":"AAAA-MM-JJ","articles":[{"nom":"Riz arborio","prix":2.49,"quantite":1,"unite":"kg"}]}
+date : la date du ticket si elle est lisible, sinon "".
+articles : uniquement les produits alimentaires achetés, une entrée par ligne du ticket.
+nom : le produit en clair et sans la marque ; développe une abréviation seulement si tu es sûr du sens.
+prix : le prix payé pour la ligne, en euros, nombre avec un point décimal.
+quantite et unite : le poids ou la contenance indiqués sur le ticket, unite parmi g, kg, ml, cl, l, pièce ; pour un article pesé, le poids acheté ; pour un lot (ex. x6), quantite 6 et unite pièce ; si rien n'est indiqué, quantite 1 et unite pièce.
+Ignore les totaux, sous-totaux, remises, TVA, fidélité, moyens de paiement et articles non alimentaires. Si aucun ticket n'est lisible : {"date":"","articles":[]}`;
+const ticketInput = document.createElement('input');
+ticketInput.type = 'file'; ticketInput.accept = 'image/*'; ticketInput.multiple = true; ticketInput.hidden = true;
+document.body.appendChild(ticketInput);
+ticketInput.addEventListener('change', () => { const files = [...ticketInput.files].slice(0, 4); ticketInput.value = ''; if (files.length) readTicket(files); });
+async function readTicket(files){
+  let cancelled = false, ctl = null;
+  S.phCtl = { abort(){ cancelled = true; if (ctl) ctl.abort(); } };
+  sheet(`<h3>Lecture du ticket</h3><p id="ph-st">Préparation…</p><div class="progress"><i id="ph-bar" style="width:3%"></i></div><div class="acts"><button class="btn" data-act="ph-cancel">Annuler</button></div>`);
+  const status = (msg, pct) => { const st = $('#ph-st'), bar = $('#ph-bar'); if (st) st.textContent = msg; if (bar && pct != null) bar.style.width = Math.max(3, Math.round(pct)) + '%'; };
+  try {
+    let items = [], date = '';
+    const smp = await getSample();
+    if (smp && S.photoLim) {
+      ctl = new AbortController(); status('Claude lit le ticket…', 40);
+      const { text } = await smp(TICKET_PROMPT, { images:files.slice(0, S.photoLim.maxCount || 1), signal:ctl.signal });
+      const raw = String(text), a = raw.indexOf('{'), z = raw.lastIndexOf('}');
+      const obj = a >= 0 ? JSON.parse(raw.slice(a, z + 1)) : {};
+      date = obj.date || '';
+      items = (obj.articles || []).map(x => ({ nom:cap(String(x.nom || '').trim()), prix:+x.prix || 0, qte:+x.quantite || 1, unite:UNIT_OPTS.includes(x.unite) ? x.unite : 'pièce' })).filter(x => x.nom);
+    } else {
+      const txt = await ocrRun(files, status, () => cancelled);
+      if (cancelled) return;
+      ({ items, date } = parseReceipt(txt));
+    }
+    if (cancelled) return;
+    if (!items.length) throw { code:'empty' };
+    const names = ingNames();
+    S.ticket = { date, items:items.map(it => ({ ...it, on:true, link:bestIng(it.nom, names) })) };
+    closeSheet(); S.screen = 'ticket'; render(); window.scrollTo(0, 0);
+  } catch (e) {
+    if (cancelled) return;
+    status(e && e.code === 'empty' ? 'Aucun article lu sur ce ticket. Reprends la photo à plat, bien éclairée et sans pli.' : e && e.message === 'load' ? 'Impossible de charger le module de lecture : vérifie ta connexion internet.' : 'La lecture du ticket a échoué. Réessaie avec une photo plus nette.', 0);
+    const btn = $('#sheet [data-act="ph-cancel"]'); if (btn) btn.textContent = 'Fermer';
+  }
+}
+
+S.prices = load(PKEY, []);
 loadRecipes();
 render();
 initPhoto();
