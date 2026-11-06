@@ -250,6 +250,19 @@ select{width:100%;font:inherit;font-size:17px;color:var(--ink);background:var(--
 .vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);pointer-events:none}
 label.btn{cursor:pointer;position:relative}
 
+/* Zones sur la photo */
+.ztypes{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 12px}
+.ztypes button{border:2px solid var(--zc);background:var(--surface);color:var(--ink);border-radius:999px;padding:8px 14px;font-weight:700;font-size:15px;min-height:42px;cursor:pointer}
+.ztypes button[aria-checked="true"]{background:var(--zc);color:#fff}
+.zpager{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:10px;font-weight:700}
+.zwrap{position:relative;margin:0 auto;touch-action:none;user-select:none;-webkit-user-select:none;border-radius:12px;overflow:hidden;background:#000}
+.zwrap img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none;-webkit-user-drag:none}
+.zlayer{position:absolute;inset:0}
+.zbox{position:absolute;border:3px solid var(--zc);background:color-mix(in srgb, var(--zc) 18%, transparent);border-radius:4px}
+.zbox.drawing{border-style:dashed}
+.ztag{position:absolute;left:0;top:0;background:var(--zc);color:#fff;font-size:12px;font-weight:700;padding:1px 6px;border-radius:0 0 4px 0;white-space:nowrap;pointer-events:none}
+.zdel{position:absolute;right:-1px;top:-1px;width:34px;height:34px;border:none;border-radius:0 0 0 6px;background:var(--zc);color:#fff;font-weight:700;cursor:pointer;font-size:15px}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -1095,7 +1108,7 @@ async function sendShop(){
   sheet(`<h3>Liste de courses</h3><p>Le partage direct vers Notes n’est pas disponible dans cette vue. Copie la liste et colle-la dans une nouvelle note, ou enregistre-la en fichier.</p><textarea class="raw" readonly>${esc(text)}</textarea><div class="acts"><button class="btn primary" data-act="copy">Copier la liste</button><button class="btn" data-act="shop-save">Enregistrer en fichier .txt</button><button class="btn" data-act="close-sheet">Fermer</button></div>`);
 }
 function render(){
-  const v = { home:vHome, list:vList, editor:vEditor, cook:vCook, recap:vRecap, shop:vShop, manage:vManage, prices:vPrices, ticket:vTicket }[S.screen];
+  const v = { home:vHome, list:vList, editor:vEditor, cook:vCook, recap:vRecap, shop:vShop, manage:vManage, prices:vPrices, ticket:vTicket, zones:vZones }[S.screen];
   app.innerHTML = v();
   document.body.dataset.screen = S.screen;
   if (S.screen === 'cook') updMic();
@@ -1245,6 +1258,14 @@ document.addEventListener('click', async e => {
       <div class="tgrid" style="grid-template-columns:1fr 1fr"><label class="lbl">Quantité<input id="fx-qte" inputmode="decimal" value="${fmtQ(it.qte)}"></label><label class="lbl">Unité<select id="fx-unite">${UNIT_OPTS.map(u => `<option ${u === it.unite ? 'selected' : ''}>${u}</option>`).join('')}</select></label></div>
       <div class="acts"><button class="btn primary" data-act="tk-fix-save" data-i="${b.dataset.i}">Valider</button><button class="btn" data-act="close-sheet">Annuler</button></div>`); break; }
     case 'tk-fix-save': { const it = S.ticket && S.ticket.items[+b.dataset.i]; if (!it) break; it.prix = parseFloat((sheetVals['fx-prix'] || '').replace(',', '.')) || 0; it.qte = parseFloat((sheetVals['fx-qte'] || '1').replace(',', '.')) || 1; it.unite = sheetVals['fx-unite'] || it.unite; it.detected = true; render(); break; }
+    case 'z-type': S.zones.type = b.dataset.k; render(); break;
+    case 'z-prev': if (S.zones.cur > 0) { S.zones.cur--; render(); } break;
+    case 'z-next': if (S.zones.cur < S.zones.imgs.length - 1) { S.zones.cur++; render(); } break;
+    case 'z-del': S.zones.imgs[S.zones.cur].rects.splice(i, 1); render(); break;
+    case 'z-clear': S.zones.imgs[S.zones.cur].rects = []; render(); break;
+    case 'z-cancel': freeZones(); S.screen = 'editor'; render(); break;
+    case 'z-auto': { const files = S.zones.files; freeZones(); S.screen = 'editor'; render(); readPhoto(files); break; }
+    case 'z-read': readZones(); break;
     case 'tk-cancel': S.ticket = null; S.screen = 'prices'; render(); break;
     case 'go-manage': S.screen = 'manage'; render(); window.scrollTo(0, 0); break;
     case 'shop-minus': case 'shop-plus': { const p = S.shop.sel[id]; if (p == null) break; S.shop.sel[id] = Math.max(1, Math.min(50, p + (a === 'shop-plus' ? 1 : -1))); render(); break; }
@@ -1343,7 +1364,7 @@ document.addEventListener('change', e => {
     const files = [...(e.target.files || [])]; e.target.value = '';
     if (!files.length) return;
     if (fk === 'ticket') readTicket(files.slice(0, 4));
-    else if (fk === 'photo') readPhoto(files.slice(0, (S.photoLim && S.photoLim.maxCount) || 4));
+    else if (fk === 'photo') openZones(files.slice(0, 4));
     else if (fk === 'import') importFiles(files);
     return;
   }
@@ -1699,6 +1720,151 @@ async function readTicket(files){
   } catch (e) {
     if (cancelled) return;
     status(e && e.code === 'empty' ? 'Aucun article lu sur ce ticket. Reprends la photo à plat, bien éclairée et sans pli.' : e && e.message === 'load' ? 'Impossible de charger le module de lecture : vérifie ta connexion internet.' : 'La lecture du ticket a échoué. Réessaie avec une photo plus nette.', 0);
+    const btn = $('#sheet [data-act="ph-cancel"]'); if (btn) btn.textContent = 'Fermer';
+  }
+}
+
+/* ---------- Zones sur la photo d'une recette ---------- */
+const ZT = [['titre', 'Titre', '#C97C00'], ['ingredients', 'Ingrédients', '#0B8291'], ['materiel', 'Matériel', '#8A55C4'], ['etapes', 'Étapes', '#2C6AD6']];
+async function openZones(files){
+  const imgs = [];
+  for (const f of files) {
+    const url = URL.createObjectURL(f);
+    const dim = await new Promise(res => { const im = new Image(); im.onload = () => res({ w:im.naturalWidth, h:im.naturalHeight }); im.onerror = () => res(null); im.src = url; });
+    if (dim && dim.w && dim.h) imgs.push({ url, rects:[], ...dim }); else URL.revokeObjectURL(url);
+  }
+  if (!imgs.length) { toast('Cette image n’a pas pu être ouverte.'); return; }
+  S.zones = { imgs, cur:0, type:'titre', files };
+  S.screen = 'zones'; render(); window.scrollTo(0, 0);
+}
+function freeZones(){ if (S.zones) S.zones.imgs.forEach(im => URL.revokeObjectURL(im.url)); S.zones = null; }
+function zonesHtml(im){
+  return im.rects.map((r, i) => { const t = ZT.find(x => x[0] === r.type); return `<div class="zbox" style="left:${r.x * 100}%;top:${r.y * 100}%;width:${r.w * 100}%;height:${r.h * 100}%;--zc:${t[2]}"><span class="ztag">${t[1]}</span><button class="zdel" data-act="z-del" data-i="${i}" aria-label="Retirer ce cadre ${t[1]}">✕</button></div>`; }).join('');
+}
+function vZones(){
+  const z = S.zones, im = z.imgs[z.cur], n = z.imgs.length;
+  const counts = ZT.map(([k, l]) => { const c = z.imgs.reduce((a, x) => a + x.rects.filter(r => r.type === k).length, 0); return c ? `${l} : ${c}` : ''; }).filter(Boolean);
+  return `<div class="topbar"><button class="btn ghost" data-act="z-cancel">‹ Annuler</button><h2>Zones de la recette</h2></div>
+  <p class="hint" style="margin-top:0">Choisis ce que tu veux montrer, puis trace un cadre du doigt sur la photo. Tu peux tracer plusieurs cadres par type ; touche ✕ pour en retirer un.</p>
+  <div class="ztypes" role="radiogroup" aria-label="Type de zone">${ZT.map(([k, l, c]) => `<button role="radio" aria-checked="${z.type === k}" data-act="z-type" data-k="${k}" style="--zc:${c}">${l}</button>`).join('')}</div>
+  ${n > 1 ? `<div class="zpager"><button class="iconbtn" data-act="z-prev" ${z.cur === 0 ? 'disabled' : ''} aria-label="Photo précédente">‹</button><span>Photo ${z.cur + 1} sur ${n}</span><button class="iconbtn" data-act="z-next" ${z.cur === n - 1 ? 'disabled' : ''} aria-label="Photo suivante">›</button></div>` : ''}
+  <div class="zwrap" id="zwrap" style="aspect-ratio:${im.w} / ${im.h};width:min(100%, calc(64vh * ${(im.w / im.h).toFixed(4)}))"><img src="${im.url}" alt="Photo de la recette" draggable="false"><div class="zlayer" id="zlayer">${zonesHtml(im)}</div></div>
+  <p class="hint">${counts.length ? counts.join(', ') : 'Aucun cadre tracé pour l’instant.'}</p>
+  <div class="row-btns"><button class="btn mini" data-act="z-clear" ${im.rects.length ? '' : 'disabled'}>Effacer les cadres de cette photo</button><button class="btn mini" data-act="z-auto">Tout lire sans cadres</button></div>
+  <div class="savebar"><button class="btn primary" data-act="z-read" ${counts.length ? '' : 'disabled'}>Lire les zones</button></div>`;
+}
+let zd = null;
+document.addEventListener('pointerdown', e => {
+  const wrap = e.target.closest && e.target.closest('#zwrap');
+  if (!wrap || !S.zones || e.target.closest('.zdel')) return;
+  e.preventDefault();
+  const b = wrap.getBoundingClientRect(), t = ZT.find(q => q[0] === S.zones.type);
+  const el = document.createElement('div'); el.className = 'zbox drawing'; el.style.setProperty('--zc', t[2]);
+  $('#zlayer').appendChild(el);
+  zd = { x0:(e.clientX - b.left) / b.width, y0:(e.clientY - b.top) / b.height, b, el, id:e.pointerId, r:null };
+  try { wrap.setPointerCapture(e.pointerId); } catch (x) {}
+});
+function zdMove(e){
+  const c = v => Math.max(0, Math.min(1, v)), x = c((e.clientX - zd.b.left) / zd.b.width), y = c((e.clientY - zd.b.top) / zd.b.height), x0 = c(zd.x0), y0 = c(zd.y0);
+  const r = { x:Math.min(x0, x), y:Math.min(y0, y), w:Math.abs(x - x0), h:Math.abs(y - y0) }; zd.r = r;
+  Object.assign(zd.el.style, { left:r.x * 100 + '%', top:r.y * 100 + '%', width:r.w * 100 + '%', height:r.h * 100 + '%' });
+}
+document.addEventListener('pointermove', e => { if (zd && e.pointerId === zd.id) zdMove(e); });
+document.addEventListener('pointerup', e => {
+  if (!zd || e.pointerId !== zd.id) return;
+  zdMove(e); const r = zd.r; zd.el.remove(); zd = null;
+  if (r && r.w > 0.03 && r.h > 0.015 && S.zones) { S.zones.imgs[S.zones.cur].rects.push({ type:S.zones.type, ...r }); render(); }
+});
+document.addEventListener('pointercancel', () => { if (zd) { zd.el.remove(); zd = null; } });
+function cropZone(im, r){
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      const sx = r.x * img.naturalWidth, sy = r.y * img.naturalHeight, sw = r.w * img.naturalWidth, sh = r.h * img.naturalHeight;
+      const k = Math.min(2, 2000 / Math.max(sw, sh)), cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(sw * k)); cv.height = Math.max(1, Math.round(sh * k));
+      const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+      g.filter = 'grayscale(1) contrast(1.25)'; g.drawImage(img, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+      cv.toBlob(bl => res(bl), 'image/png');
+    };
+    img.onerror = () => res(null);
+    img.src = im.url;
+  });
+}
+async function ocrCrops(blobs, status, isCancelled){
+  const out = [], smp = await getSample();
+  if (smp && S.photoLim) {
+    for (let i = 0; i < blobs.length; i++) {
+      if (isCancelled()) break;
+      status(`Lecture de la zone ${i + 1} sur ${blobs.length}…`, 10 + 85 * i / blobs.length);
+      const { text } = await smp('Transcris exactement le texte de cette image, ligne par ligne, en gardant les retours à la ligne. Réponds uniquement par le texte, sans commentaire ni mise en forme.', { images:[blobs[i]] });
+      out.push(String(text));
+    }
+    return out;
+  }
+  status('Chargement du module de lecture…', 5);
+  const T = await loadTess(); let page = 0;
+  const worker = await T.createWorker('fra', 1, { logger: m => {
+    if (isCancelled()) return;
+    if (m.status === 'recognizing text') status(`Lecture de la zone ${page + 1} sur ${blobs.length}… ${Math.round(m.progress * 100)} %`, 30 + 70 * ((page + m.progress) / blobs.length));
+    else if (/traineddata/.test(m.status)) status('Téléchargement du français…', 5 + 20 * (m.progress || 0));
+  } });
+  try { for (; page < blobs.length; page++) { if (isCancelled()) break; const { data } = await worker.recognize(blobs[page]); out.push(data.text); } }
+  finally { try { await worker.terminate(); } catch (x) {} }
+  return out;
+}
+const ZH = { ingredients:/^(les\s+)?ingr[ée]dients?\b/i, materiel:/^(le\s+)?(mat[ée]riel|ustensiles?)\b/i, etapes:/^(la\s+)?(pr[ée]paration|[ée]tapes?|instructions?|r[ée]alisation|progression|m[ée]thode|d[ée]roulement)\b/i };
+const zoneLines = (txt, head) => String(txt || '').split('\n').map(l => l.replace(/[ \t]+/g, ' ').trim()).filter(l => l && /[a-zA-Z0-9À-ÿ]/.test(l) && !(head && l.length < 45 && head.test(l) && !/:\s*\S/.test(l)));
+const zStrip = l => l.replace(/^[-–—•*·▪●○◦✓☐]\s*/, '').replace(/^(ingr[ée]dients?|mat[ée]riel|ustensiles?|pr[ée]paration)\s*:\s*/i, '').trim();
+function groupSteps(lines){
+  const numRe = /^(?:[ée]tape\s*)?(\d{1,2})\s*[.)\-–:]\s*/i, numbered = lines.some(l => numRe.test(l)), steps = [];
+  let cur = ''; const push = () => { const t = cur.trim(); if (t) steps.push(t); cur = ''; };
+  lines.forEach(l => {
+    if (numbered) { if (numRe.test(l)) { push(); cur = l.replace(numRe, ''); } else cur += (cur ? ' ' : '') + zStrip(l); }
+    else { cur += (cur ? ' ' : '') + zStrip(l); if (/[.!]$/.test(l)) push(); }
+  });
+  push(); return steps;
+}
+function zonesToMarkers(by){
+  const all = Object.values(by).flat().join('\n');
+  const pm = all.match(/pour\s+(\d+)\s*(personnes?|portions?|parts?|pers\b|couverts?)/i);
+  const title = by.titre.map(t => zoneLines(t).join(' ')).join(' ').replace(/\s+/g, ' ').trim();
+  const ing = [];
+  by.ingredients.forEach(t => zoneLines(t, ZH.ingredients).forEach(l => {
+    const s = zStrip(l); if (!s || /^pour\s+\d+/i.test(s)) return;
+    if (ing.length && (/^\(/.test(s) || /(,|-|\bde|\bd')$/i.test(ing[ing.length - 1]))) ing[ing.length - 1] += ' ' + s; else ing.push(s);
+  }));
+  const mat = [];
+  by.materiel.forEach(t => zoneLines(t, ZH.materiel).forEach(l => zStrip(l).split(/\s*[,;]\s*/).filter(Boolean).forEach(x => mat.push(cap(x)))));
+  const steps = groupSteps(by.etapes.flatMap(t => zoneLines(t, ZH.etapes)));
+  const out = [`Recette : ${title || 'Recette sans titre'}`];
+  if (pm) out.push(`Portions : ${pm[1]}`);
+  if (ing.length) { out.push(''); ing.forEach(x => out.push(`Ingrédient : ${x}`)); }
+  if (mat.length) { out.push(''); mat.forEach(x => out.push(`Matériel : ${x}`)); }
+  steps.forEach(st => { out.push('', `Étape : ${st}`); const d = guessTime(st); if (d) out.push(`Temps : ${fmtDur(d)}`); });
+  return out.join('\n');
+}
+async function readZones(){
+  const z = S.zones; if (!z) return;
+  const jobs = [];
+  z.imgs.forEach((im, ii) => im.rects.forEach(r => jobs.push({ im, r, ii })));
+  if (!jobs.length) return;
+  jobs.sort((a, b) => a.ii - b.ii || a.r.y - b.r.y || a.r.x - b.r.x);
+  let cancelled = false; S.phCtl = { abort(){ cancelled = true; } };
+  sheet(`<h3>Lecture des zones</h3><p id="ph-st">Découpage de la photo…</p><div class="progress"><i id="ph-bar" style="width:3%"></i></div><div class="acts"><button class="btn" data-act="ph-cancel">Annuler</button></div>`);
+  const status = (msg, pct) => { const st = $('#ph-st'), bar = $('#ph-bar'); if (st) st.textContent = msg; if (bar && pct != null) bar.style.width = Math.max(3, Math.round(pct)) + '%'; };
+  try {
+    const blobs = []; for (const j of jobs) blobs.push(await cropZone(j.im, j.r));
+    const texts = await ocrCrops(blobs, status, () => cancelled);
+    if (cancelled || !S.zones) return;
+    const by = { titre:[], ingredients:[], materiel:[], etapes:[] };
+    jobs.forEach((j, i) => by[j.r.type].push(texts[i] || ''));
+    const markers = zonesToMarkers(by);
+    closeSheet(); freeZones(); S.screen = 'editor';
+    applyRecipeText(markers, 'photo');
+  } catch (e) {
+    if (cancelled) return;
+    status(e && e.message === 'load' ? 'Impossible de charger le module de lecture : vérifie ta connexion internet, nécessaire la première fois.' : e && e.code === 'not_granted' ? 'La lecture de la photo n’a pas été autorisée.' : 'La lecture a échoué. Essaie des cadres un peu plus larges, sur une photo nette et bien éclairée.', 0);
     const btn = $('#sheet [data-act="ph-cancel"]'); if (btn) btn.textContent = 'Fermer';
   }
 }
