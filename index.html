@@ -290,7 +290,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.16';
+const APP_VERSION = '1.17';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -726,7 +726,7 @@ function heard(raw){
     const pm = n.match(/(\d+)\s*(portion|personne|part)/);
     if (pm) { ack(); setPortions(+pm[1]); const est = Math.round(estTotal(c.r) * c.f); return say(`${plural(c.portions, 'portion')}.${est ? ` Temps total estimé : ${fmtSpeech(est)}.` : ''}`, true); }
   }
-  if (c.i < 0 && /commenc|c'est parti|etape termin/.test(n)) { ack(); return goStep(0); }
+  if (c.i < 0 && /commenc|c'est parti|etape termin|demarre/.test(n)) { ack(); return finishStep(); }
   const cmds = [
     [/termine(r)? la recette|fin de la recette/, () => { c.confirmEnd = Date.now() + 8000; say('Terminer la recette ? Dis oui pour confirmer.', true); }],
     [/etape termin|etape finie/, finishStep],
@@ -777,7 +777,7 @@ function goStep(i){
 }
 function finishStep(){
   const c = S.cook; if (!c) return;
-  if (c.i < 0) return goStep(0);
+  if (c.i < 0) { goStep(0); return tStart(true); }
   const st = c.r.etapes[c.i], d = Math.max(1, Math.round((Date.now() - (c.workStart || c.stepStart)) / 1000));
   st.tempsReels = [d, ...st.tempsReels].slice(0, 5);
   c.results[c.i] = d; persist();
@@ -870,11 +870,11 @@ function readIngredients(){
 }
 
 /* Minuteur */
-function tStart(){
+function tStart(silent){
   const c = S.cook, t = c && c.t;
   if (!c || c.i < 0) return;
   if (!c.workStart) c.workStart = Date.now();
-  if (!t) { render(); return say('Chrono lancé.', true); }
+  if (!t) { render(); if (!silent) say('Chrono lancé.', true); return; }
   if (t.running) return;
   if (t.remaining <= 0) { t.remaining = t.total; t.done = false; }
   t.endAt = Date.now() + t.remaining * 1000; t.running = true; updTimer(true);
