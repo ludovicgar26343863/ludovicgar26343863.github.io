@@ -612,7 +612,7 @@ function startVoice(){
   const rec = new SR();
   rec.lang = 'fr-FR'; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 1;
   rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) heard(e.results[i][0].transcript); };
-  rec.onerror = e => { if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e.error)) { V.on = false; V.state = 'denied'; updMic(); } };
+  rec.onerror = e => { if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e.error)) { V.on = false; V.state = 'denied'; V.err = e.error; updMic(); } };
   rec.onend = () => { if (V.on && V.rec === rec) setTimeout(() => { if (V.on && V.rec === rec) { try { rec.start(); } catch (e) {} } }, 300); };
   V.rec = rec; V.on = true; V.state = 'on';
   try { rec.start(); } catch (e) {}
@@ -624,7 +624,24 @@ function stopVoice(){
   if (V.rec) { try { V.rec.abort(); } catch (e) {} V.rec = null; }
   updMic();
 }
-const micLabel = () => ({ on:'Micro actif', off:'Micro coupé', denied:'Micro refusé', unsupported:'Voix indisponible' })[V.state];
+const micLabel = () => V.state === 'denied' ? (V.err === 'service-not-allowed' ? 'Service vocal bloqué' : V.err === 'audio-capture' ? 'Micro occupé' : 'Micro refusé') : ({ on:'Micro actif', off:'Micro coupé', unsupported:'Voix indisponible' })[V.state];
+const inClaude = () => !!(window.claude && typeof window.claude.use === 'function');
+function micHelp(again){
+  const err = V.err || 'not-allowed';
+  const steps = err === 'audio-capture'
+    ? `<p>Le micro est déjà utilisé par une autre application (appel, dictaphone, assistant vocal, autre onglet).</p><ol><li>Ferme l’application qui utilise le micro.</li><li>Reviens ici et touche « Réessayer ».</li></ol>`
+    : err === 'service-not-allowed'
+    ? `<p>Le micro est autorisé, mais le service de reconnaissance vocale est bloqué. Sur Android, Chrome passe par l’application Google pour comprendre la voix.</p><ol><li>Paramètres du téléphone → Applications → <b>Google</b> → Autorisations → Micro → « Autoriser seulement si l’appli est en cours d’utilisation ».</li><li>Toujours dans Applications → Google : si l’application est désactivée, touche « Activer ».</li><li>Vérifie que le téléphone est connecté à internet.</li><li>Reviens ici et touche « Réessayer ».</li></ol>`
+    : `<p>${inClaude() ? 'L’app Claude' : 'Chrome'} n’a pas accès au micro pour cette page.</p><ol>${inClaude() ? `<li>Paramètres du téléphone → Applications → <b>Claude</b> → Autorisations → Micro → « Autoriser seulement si l’appli est en cours d’utilisation ».</li>` : `<li>Paramètres du téléphone → Applications → <b>Chrome</b> → Autorisations → Micro → « Autoriser seulement si l’appli est en cours d’utilisation ».</li><li>Dans Chrome : ⋮ → Paramètres → Paramètres des sites → Micro. Si ce site est dans « Bloqué », touche-le et choisis « Autoriser ».</li>`}<li>Paramètres du téléphone → Applications → <b>Google</b> → Autorisations → Micro → Autoriser (la reconnaissance vocale passe par elle).</li><li>Reviens ici, touche « Réessayer » et accepte la demande d’accès au micro.</li></ol>${inClaude() ? `<p>Si le refus persiste, c’est l’app Claude qui ne transmet pas le micro aux prototypes : utilise ton application installée, ou ouvre le lien du prototype dans Chrome.</p>` : ''}`;
+  sheet(`<h3>${again ? 'Toujours bloqué' : 'Activer le micro'}</h3>${steps}<div class="acts"><button class="btn primary" data-act="mic-retry">Réessayer</button><button class="btn" data-act="close-sheet">Fermer</button></div>`);
+}
+async function micRetry(){
+  try {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) { const st = await navigator.mediaDevices.getUserMedia({ audio:true }); st.getTracks().forEach(t => t.stop()); }
+  } catch (e) { V.state = 'denied'; V.err = e && e.name === 'NotReadableError' ? 'audio-capture' : 'not-allowed'; updMic(); micHelp(true); return; }
+  V.state = 'off'; V.err = null; startVoice();
+  setTimeout(() => { if (V.state === 'denied') micHelp(true); else if (V.state === 'on') toast('Micro actif'); }, 1500);
+}
 function updMic(){ const b = $('#mic'); if (!b) return; b.classList.toggle('on', V.state === 'on'); $('#mic-l').textContent = micLabel(); }
 function setHeard(raw, miss){ const el = $('#heard'); if (el) el.textContent = miss ? `« ${raw} » : je n’ai pas compris cette commande.` : `« ${raw} »`; }
 
@@ -685,7 +702,7 @@ function startCook(id){
   const gmv = load(MKEY, {}); S.cook.mats.forEach(m => { S.cook.mat[m] = gmv[norm(m)] || ''; });
   S.screen = 'cook'; render(); window.scrollTo(0, 0);
   keepAwake(true);
-  if (SR && V.state !== 'denied') startVoice();
+  if (SR) { if (V.state === 'denied') { V.state = 'off'; V.err = null; } startVoice(); }
   say(`${r.titre}. Pour combien de portions ? Dis par exemple « 6 portions », puis « commencer ».`);
 }
 function setPortions(n){
@@ -1311,6 +1328,7 @@ document.addEventListener('click', async e => {
     }
     /* cuisson */
     case 'quit': quitCook(); break;
+    case 'mic-retry': ensureAudio(); micRetry(); break;
     case 'cook-edit': { const id = S.cook.rid; stopAlarm(); stopVoice(); keepAwake(false); hush(); S.cook = null; S.screen = 'manage'; openEditor(id); break; }
     case 'por-minus': setPortions(S.cook.portions - 1); break;
     case 'por-plus': setPortions(S.cook.portions + 1); break;
@@ -1318,7 +1336,8 @@ document.addEventListener('click', async e => {
       ensureAudio();
       if (V.state === 'unsupported') sheet(`<h3>Commande vocale indisponible</h3><p>Ce navigateur ne propose pas la reconnaissance vocale. Ouvre la page dans Chrome sur Android pour piloter la recette à la voix ; en attendant, les boutons font tout.</p><div class="acts"><button class="btn" data-act="close-sheet">Compris</button></div>`);
       else if (V.state === 'on') stopVoice();
-      else { if (V.state === 'denied') V.state = 'off'; startVoice(); }
+      else if (V.state === 'denied') micHelp(false);
+      else startVoice();
       break;
     case 'next': ensureAudio(); finishStep(); break;
     case 'prev': prevStep(); break;
