@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Pas à pas</title>
+<title>Boudine’s cook</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0B6E7A">
 <link rel="icon" href="icon-192.png">
@@ -283,7 +283,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.13';
+const APP_VERSION = '1.15';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -650,8 +650,12 @@ async function micTest(){
   const end = msg => { const c = $('#mt-c'); if (c) c.textContent = msg; };
   const standalone = window.matchMedia && matchMedia('(display-mode: standalone)').matches;
   add('Mode', inClaude() ? 'prototype dans Claude' : standalone ? 'application installée' : 'onglet du navigateur');
+  const ua = navigator.userAgent, sam = ua.match(/SamsungBrowser\/([\d.]+)/), chr = ua.match(/Chrome\/(\d+)/), wv = /; wv\)/.test(ua);
+  const browser = sam ? `Samsung Internet ${sam[1]}` : wv ? 'WebView Android' : chr ? `Chrome ${chr[1]}` : 'autre';
+  add('Navigateur', browser);
   add('Reconnaissance vocale', SR ? 'présente' : 'absente de ce navigateur', !!SR);
-  try { const p = await navigator.permissions.query({ name:'microphone' }); add('Autorisation du site', { granted:'accordée', prompt:'pas encore demandée', denied:'refusée' }[p.state] || p.state, p.state !== 'denied'); } catch (e) { add('Autorisation du site', 'non lisible'); }
+  let pst = '';
+  try { const p = await navigator.permissions.query({ name:'microphone' }); pst = p.state; add('Autorisation du site', { granted:'accordée', prompt:'pas encore demandée', denied:'refusée' }[p.state] || p.state, p.state !== 'denied'); } catch (e) { add('Autorisation du site', 'non lisible'); }
   let mic = false;
   try { const st = await navigator.mediaDevices.getUserMedia({ audio:true }); st.getTracks().forEach(t => t.stop()); mic = true; add('Accès au micro', 'OK', true); }
   catch (e) { add('Accès au micro', e && e.name || 'erreur', false); }
@@ -671,7 +675,9 @@ async function micTest(){
   if (res.heard) end('Tout fonctionne. Lance une recette : le micro doit passer à « Micro actif ».');
   else if (res.err === 'not-allowed' && mic) end('Le micro fonctionne, mais Chrome refuse la reconnaissance vocale dans ce mode. Essaie la même page dans un onglet Chrome (https://ludovicgar26343863.github.io) et envoie-moi le résultat de ce test.');
   else if (res.err === 'service-not-allowed' || res.err === 'network') end('Le service de reconnaissance de Google ne répond pas : vérifie l’application Google (activée, micro autorisé) et la connexion internet.');
-  else if (!mic) end('Le micro lui-même est refusé : vérifie les autorisations de Chrome, puis relance le test.');
+  else if (!mic && sam) end('L’application tourne dans Samsung Internet, pas dans Chrome : les autorisations données à Chrome ne s’appliquent pas. Donne le micro à Samsung Internet (Paramètres → Applications → Samsung Internet → Autorisations → Micro), ou mets Chrome comme navigateur par défaut puis réinstalle l’APK.');
+  else if (!mic && pst === 'prompt') end('Le navigateur refuse le micro sans afficher la demande. Dans Chrome : ⋮ → Paramètres → Paramètres des sites → Tous les sites → ludovicgar26343863.github.io → « Réinitialiser les autorisations » (surtout pas « Effacer les données » : tes recettes seraient perdues). Puis relance le test et accepte la demande.');
+  else if (!mic) end('Le micro lui-même est refusé : vérifie les autorisations du navigateur, puis relance le test.');
   else end('Rien n’a été entendu : relance le test en parlant juste après « Je t’écoute ».');
 }
 async function micRetry(){
@@ -1009,7 +1015,7 @@ function vHome(){
   <button class="choice" data-act="go-settings"><strong>Paramétrage</strong><span>Sauvegarde globale, réglages et fichiers</span></button>
   ${SR ? '' : `<p class="hint">La commande vocale n’est pas disponible dans ce navigateur : les boutons font tout. Pour l’essayer, ouvre la page dans Chrome sur ton téléphone.</p>`}
   ${n && old ? `<p class="hint">${last ? 'Ta dernière sauvegarde date de plus d’un mois' : 'Tu n’as encore jamais fait de sauvegarde'} : pense à en faire une dans Paramétrage.</p>` : ''}
-  <p class="ver">Pas à pas, version ${APP_VERSION}</p>`;
+  <p class="ver">Boudine’s cook, version ${APP_VERSION}</p>`;
 }
 function vSettings(){
   const last = load(BKEY, null), np = S.prices.length;
@@ -1030,7 +1036,7 @@ function vSettings(){
   <div class="stack"><button class="btn" data-act="mic-test">Tester le micro</button></div>
   <h3 class="sub">Recettes en fichiers</h3>
   <div class="stack"><label class="btn">Importer un fichier .recette.txt<input type="file" accept=".txt,text/plain" multiple data-file="import" class="vh"></label><button class="btn" data-act="export-template">Exporter le modèle vide</button></div>
-  <p class="ver">Pas à pas, version ${APP_VERSION}</p>`;
+  <p class="ver">Boudine’s cook, version ${APP_VERSION}</p>`;
 }
 function rowsHtml(){
   const q = norm(S.q);
@@ -1954,19 +1960,19 @@ const BKEY = 'pasapas:derniere-sauvegarde';
 function backupText(){
   return JSON.stringify({ format:'pas-a-pas-sauvegarde', version:1, app:APP_VERSION, date:new Date().toISOString(), recettes:S.recipes.map(r => ({ id:r.id, texte:serialize(r) })), prix:S.prices, materiel:load(MKEY, {}), reglages:S.settings }, null, 1);
 }
-const backupName = () => `pas-a-pas-sauvegarde-${new Date().toISOString().slice(0, 10)}.txt`;
+const backupName = () => `boudines-cook-sauvegarde-${new Date().toISOString().slice(0, 10)}.txt`;
 function markBackup(){ store(BKEY, new Date().toISOString()); if (S.screen === 'settings' || S.screen === 'home') render(); }
 async function saveBackup(){ await exportText(backupName(), backupText()); markBackup(); }
 async function shareBackup(){
   const f = new File([backupText()], backupName(), { type:'text/plain' });
   try {
-    if (navigator.canShare && navigator.canShare({ files:[f] })) { await navigator.share({ files:[f], title:'Sauvegarde Pas à pas' }); markBackup(); toast('Sauvegarde envoyée'); return; }
+    if (navigator.canShare && navigator.canShare({ files:[f] })) { await navigator.share({ files:[f], title:'Sauvegarde Boudine’s cook' }); markBackup(); toast('Sauvegarde envoyée'); return; }
   } catch (e) { if (e && e.name === 'AbortError') return; }
   toast('L’envoi n’est pas disponible ici : utilise « Enregistrer la sauvegarde ».');
 }
 async function restoreFile(file){
   let d = null; try { d = JSON.parse(await file.text()); } catch (e) {}
-  if (!d || d.format !== 'pas-a-pas-sauvegarde' || !Array.isArray(d.recettes)) { toast('Ce fichier n’est pas une sauvegarde Pas à pas.'); return; }
+  if (!d || d.format !== 'pas-a-pas-sauvegarde' || !Array.isArray(d.recettes)) { toast('Ce fichier n’est pas une sauvegarde Boudine’s cook.'); return; }
   const np = (d.prix || []).length;
   const how = await ask('Restaurer la sauvegarde ?', `Sauvegarde du ${fmtDateFr(String(d.date || '').slice(0, 10))} : ${plural(d.recettes.length, 'recette')}, ${np} prix. « Ajouter » garde tes données actuelles et complète avec la sauvegarde ; « Tout remplacer » efface d’abord ce qui est sur le téléphone.`, [{ label:'Ajouter aux données actuelles', value:'merge', kind:'primary' }, { label:'Tout remplacer', value:'replace', kind:'danger' }, { label:'Annuler', value:null }]);
   if (!how) return;

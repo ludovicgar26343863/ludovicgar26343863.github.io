@@ -1,7 +1,7 @@
 {
-  "name": "Pas à pas",
-  "short_name": "Pas à pas",
-  "description": "Recettes guidées étape par étape, minuteurs et commande vocale.",
+  "name": "Boudine’s cook",
+  "short_name": "Boudine’s cook",
+  "description": "Mes recettes guidées étape par étape, minuteurs et commande vocale.",
   "lang": "fr",
   "start_url": "./",
   "scope": "./",
