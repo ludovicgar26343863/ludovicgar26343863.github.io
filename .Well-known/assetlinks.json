@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.ludovicgar26343863.twa",
+        "sha256_cert_fingerprints": ["60:3B:65:C0:73:74:00:FC:B5:C3:3E:15:6B:04:A5:99:E9:C8:B9:28:38:4C:5D:22:87:92:E6:2F:2C:2B:5A:A4"]
+      }
+    }]
