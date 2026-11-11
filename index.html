@@ -263,6 +263,8 @@ label.btn{cursor:pointer;position:relative}
 .ztag{position:absolute;left:0;top:0;background:var(--zc);color:#fff;font-size:12px;font-weight:700;padding:1px 6px;border-radius:0 0 4px 0;white-space:nowrap;pointer-events:none}
 .zdel{position:absolute;right:-1px;top:-1px;width:34px;height:34px;border:none;border-radius:0 0 0 6px;background:var(--zc);color:#fff;font-weight:700;cursor:pointer;font-size:15px}
 
+.ver{text-align:center;color:var(--muted);font-size:13px;margin:32px 0 0;opacity:.8}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -281,6 +283,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
+const APP_VERSION = '1.13';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -612,9 +615,14 @@ function startVoice(){
   const rec = new SR();
   rec.lang = 'fr-FR'; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 1;
   rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) heard(e.results[i][0].transcript); };
-  rec.onerror = e => { if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e.error)) { V.on = false; V.state = 'denied'; V.err = e.error; updMic(); } };
-  rec.onend = () => { if (V.on && V.rec === rec) setTimeout(() => { if (V.on && V.rec === rec) { try { rec.start(); } catch (e) {} } }, 300); };
-  V.rec = rec; V.on = true; V.state = 'on';
+  rec.onerror = e => {
+    if (!['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e.error)) return;
+    V.on = false; V.err = e.error;
+    V.state = V.auto && e.error !== 'audio-capture' ? 'paused' : 'denied';
+    updMic();
+  };
+  rec.onend = () => { if (V.on && V.rec === rec) setTimeout(() => { if (V.on && V.rec === rec) { V.auto = true; try { rec.start(); } catch (e) {} } }, 300); };
+  V.rec = rec; V.on = true; V.state = 'on'; V.auto = false;
   try { rec.start(); } catch (e) {}
   updMic();
 }
@@ -624,7 +632,7 @@ function stopVoice(){
   if (V.rec) { try { V.rec.abort(); } catch (e) {} V.rec = null; }
   updMic();
 }
-const micLabel = () => V.state === 'denied' ? (V.err === 'service-not-allowed' ? 'Service vocal bloqué' : V.err === 'audio-capture' ? 'Micro occupé' : 'Micro refusé') : ({ on:'Micro actif', off:'Micro coupé', unsupported:'Voix indisponible' })[V.state];
+const micLabel = () => V.state === 'denied' ? (V.err === 'service-not-allowed' ? 'Service vocal bloqué' : V.err === 'audio-capture' ? 'Micro occupé' : 'Micro refusé') : ({ on:'Micro actif', off:'Micro coupé', paused:'Touche pour écouter', unsupported:'Voix indisponible' })[V.state];
 const inClaude = () => !!(window.claude && typeof window.claude.use === 'function');
 function micHelp(again){
   const err = V.err || 'not-allowed';
@@ -634,6 +642,37 @@ function micHelp(again){
     ? `<p>Le micro est autorisé, mais le service de reconnaissance vocale est bloqué. Sur Android, Chrome passe par l’application Google pour comprendre la voix.</p><ol><li>Paramètres du téléphone → Applications → <b>Google</b> → Autorisations → Micro → « Autoriser seulement si l’appli est en cours d’utilisation ».</li><li>Toujours dans Applications → Google : si l’application est désactivée, touche « Activer ».</li><li>Vérifie que le téléphone est connecté à internet.</li><li>Reviens ici et touche « Réessayer ».</li></ol>`
     : `<p>${inClaude() ? 'L’app Claude' : 'Chrome'} n’a pas accès au micro pour cette page.</p><ol>${inClaude() ? `<li>Paramètres du téléphone → Applications → <b>Claude</b> → Autorisations → Micro → « Autoriser seulement si l’appli est en cours d’utilisation ».</li>` : `<li>Paramètres du téléphone → Applications → <b>Chrome</b> → Autorisations → Micro → « Autoriser seulement si l’appli est en cours d’utilisation ».</li><li>Dans Chrome : ⋮ → Paramètres → Paramètres des sites → Micro. Si ce site est dans « Bloqué », touche-le et choisis « Autoriser ».</li>`}<li>Paramètres du téléphone → Applications → <b>Google</b> → Autorisations → Micro → Autoriser (la reconnaissance vocale passe par elle).</li><li>Reviens ici, touche « Réessayer » et accepte la demande d’accès au micro.</li></ol>${inClaude() ? `<p>Si le refus persiste, c’est l’app Claude qui ne transmet pas le micro aux prototypes : utilise ton application installée, ou ouvre le lien du prototype dans Chrome.</p>` : ''}`;
   sheet(`<h3>${again ? 'Toujours bloqué' : 'Activer le micro'}</h3>${steps}<div class="acts"><button class="btn primary" data-act="mic-retry">Réessayer</button><button class="btn" data-act="close-sheet">Fermer</button></div>`);
+}
+async function micTest(){
+  stopVoice();
+  sheet(`<h3>Test du micro</h3><ul class="gaps" id="mt" style="color:var(--ink)"></ul><p class="hint" id="mt-c">Test en cours…</p><div class="acts"><button class="btn" data-act="close-sheet">Fermer</button></div>`);
+  const add = (k, v, ok) => { const ul = $('#mt'); if (ul) ul.insertAdjacentHTML('beforeend', `<li>${ok === false ? '❌' : ok ? '✅' : 'ℹ️'} <b>${esc(k)}</b> : ${esc(v)}</li>`); };
+  const end = msg => { const c = $('#mt-c'); if (c) c.textContent = msg; };
+  const standalone = window.matchMedia && matchMedia('(display-mode: standalone)').matches;
+  add('Mode', inClaude() ? 'prototype dans Claude' : standalone ? 'application installée' : 'onglet du navigateur');
+  add('Reconnaissance vocale', SR ? 'présente' : 'absente de ce navigateur', !!SR);
+  try { const p = await navigator.permissions.query({ name:'microphone' }); add('Autorisation du site', { granted:'accordée', prompt:'pas encore demandée', denied:'refusée' }[p.state] || p.state, p.state !== 'denied'); } catch (e) { add('Autorisation du site', 'non lisible'); }
+  let mic = false;
+  try { const st = await navigator.mediaDevices.getUserMedia({ audio:true }); st.getTracks().forEach(t => t.stop()); mic = true; add('Accès au micro', 'OK', true); }
+  catch (e) { add('Accès au micro', e && e.name || 'erreur', false); }
+  if (!SR) { end('Ce navigateur ne propose pas la reconnaissance vocale : ouvre l’application dans Chrome.'); return; }
+  const res = await new Promise(resolve => {
+    const r = new SR(); r.lang = 'fr-FR'; r.continuous = false; r.interimResults = false;
+    let out = { err:null, heard:'' }, done = false; const fin = () => { if (!done) { done = true; try { r.abort(); } catch (x) {} resolve(out); } };
+    r.onstart = () => { add('Écoute', 'démarrée, dis « bonjour »', true); end('Je t’écoute : dis « bonjour »…'); };
+    r.onresult = e => { out.heard = e.results[0][0].transcript; fin(); };
+    r.onerror = e => { out.err = e.error; fin(); };
+    r.onend = fin;
+    setTimeout(fin, 9000);
+    try { r.start(); } catch (e) { out.err = 'start'; fin(); }
+  });
+  if (res.heard) add('Reconnaissance', `« ${res.heard} »`, true);
+  else add('Reconnaissance', res.err ? `erreur ${res.err}` : 'rien entendu', false);
+  if (res.heard) end('Tout fonctionne. Lance une recette : le micro doit passer à « Micro actif ».');
+  else if (res.err === 'not-allowed' && mic) end('Le micro fonctionne, mais Chrome refuse la reconnaissance vocale dans ce mode. Essaie la même page dans un onglet Chrome (https://ludovicgar26343863.github.io) et envoie-moi le résultat de ce test.');
+  else if (res.err === 'service-not-allowed' || res.err === 'network') end('Le service de reconnaissance de Google ne répond pas : vérifie l’application Google (activée, micro autorisé) et la connexion internet.');
+  else if (!mic) end('Le micro lui-même est refusé : vérifie les autorisations de Chrome, puis relance le test.');
+  else end('Rien n’a été entendu : relance le test en parlant juste après « Je t’écoute ».');
 }
 async function micRetry(){
   try {
@@ -961,20 +1000,37 @@ function priceSheet(p, name){
 /* ---------- Écrans ---------- */
 function vHome(){
   const n = S.recipes.length;
-  const toggle = (k, label) => `<label class="toggle"><span>${label}</span><input type="checkbox" data-setting="${k}" ${S.settings[k] ? 'checked' : ''}></label>`;
+  const last = load(BKEY, null), old = !last || (Date.now() - new Date(last).getTime()) > 30 * 864e5;
   return `
   <button class="choice launch" data-act="go-list"><strong>Lancer une recette</strong><span>Choisir parmi ${plural(n, 'recette')}</span></button>
   <button class="choice create" data-act="go-manage"><strong>Gestion des recettes</strong><span>Créer, modifier ou supprimer une recette</span></button>
   <button class="choice" data-act="go-shop"><strong>Courses</strong><span>La liste des ingrédients à acheter, envoyée vers Notes</span></button>
   <button class="choice" data-act="go-prices"><strong>Scan ticket</strong><span>Mettre à jour le prix des ingrédients et le coût des plats</span></button>
+  <button class="choice" data-act="go-settings"><strong>Paramétrage</strong><span>Sauvegarde globale, réglages et fichiers</span></button>
   ${SR ? '' : `<p class="hint">La commande vocale n’est pas disponible dans ce navigateur : les boutons font tout. Pour l’essayer, ouvre la page dans Chrome sur ton téléphone.</p>`}
-  <h2 class="sec">Fichiers</h2>
-  <div class="stack"><label class="btn">Importer un fichier .recette.txt<input type="file" accept=".txt,text/plain" multiple data-file="import" class="vh"></label><button class="btn" data-act="export-template">Exporter le modèle vide</button></div>
-  <h2 class="sec">Réglages</h2>
+  ${n && old ? `<p class="hint">${last ? 'Ta dernière sauvegarde date de plus d’un mois' : 'Tu n’as encore jamais fait de sauvegarde'} : pense à en faire une dans Paramétrage.</p>` : ''}
+  <p class="ver">Pas à pas, version ${APP_VERSION}</p>`;
+}
+function vSettings(){
+  const last = load(BKEY, null), np = S.prices.length;
+  const toggle = (k, label) => `<label class="toggle"><span>${label}</span><input type="checkbox" data-setting="${k}" ${S.settings[k] ? 'checked' : ''}></label>`;
+  let canShare = false; try { canShare = !!(navigator.canShare && navigator.canShare({ files:[new File(['x'], 'x.txt', { type:'text/plain' })] })); } catch (e) {}
+  return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Paramétrage</h2></div>
+  <h3 class="sub" style="margin-top:6px">Sauvegarde globale</h3>
+  <p class="hint" style="margin-top:0">Tes recettes, tes prix et ton matériel sont enregistrés uniquement dans ce téléphone. La sauvegarde les réunit dans un seul fichier, à garder ailleurs (Drive, mail, ordinateur) pour tout retrouver après un changement de téléphone ou un effacement.</p>
+  <div class="totals"><span>Dernière sauvegarde</span><b>${last ? fmtDateFr(last.slice(0, 10)) : 'jamais'}</b></div>
+  <p class="porhint">À sauvegarder : ${plural(S.recipes.length, 'recette')}, ${np} prix enregistré${np > 1 ? 's' : ''}.</p>
+  <div class="stack" style="margin-top:12px"><button class="btn primary" data-act="backup-save">Enregistrer la sauvegarde</button>${canShare ? '<button class="btn" data-act="backup-share">Envoyer la sauvegarde (Drive, mail…)</button>' : ''}<label class="btn">Restaurer une sauvegarde<input type="file" accept=".txt,.json,text/plain,application/json" data-file="restore" class="vh"></label></div>
+  <h3 class="sub">Réglages</h3>
   ${toggle('lire', 'Lire les étapes à voix haute')}
   ${toggle('autoMinuteur', 'Démarrer le minuteur automatiquement')}
   ${toggle('lireNotes', 'Lire les notes après chaque étape')}
-  <p class="hint">Les recettes sont enregistrées dans ce navigateur, une par fichier texte. Exporte-les pour les garder ou les partager.</p>`;
+  <h3 class="sub">Micro et voix</h3>
+  <p class="hint" style="margin-top:0">Si la commande vocale ne marche pas, lance ce test : il vérifie chaque maillon (autorisation, micro, reconnaissance) et indique celui qui bloque.</p>
+  <div class="stack"><button class="btn" data-act="mic-test">Tester le micro</button></div>
+  <h3 class="sub">Recettes en fichiers</h3>
+  <div class="stack"><label class="btn">Importer un fichier .recette.txt<input type="file" accept=".txt,text/plain" multiple data-file="import" class="vh"></label><button class="btn" data-act="export-template">Exporter le modèle vide</button></div>
+  <p class="ver">Pas à pas, version ${APP_VERSION}</p>`;
 }
 function rowsHtml(){
   const q = norm(S.q);
@@ -1125,7 +1181,7 @@ async function sendShop(){
   sheet(`<h3>Liste de courses</h3><p>Le partage direct vers Notes n’est pas disponible dans cette vue. Copie la liste et colle-la dans une nouvelle note, ou enregistre-la en fichier.</p><textarea class="raw" readonly>${esc(text)}</textarea><div class="acts"><button class="btn primary" data-act="copy">Copier la liste</button><button class="btn" data-act="shop-save">Enregistrer en fichier .txt</button><button class="btn" data-act="close-sheet">Fermer</button></div>`);
 }
 function render(){
-  const v = { home:vHome, list:vList, editor:vEditor, cook:vCook, recap:vRecap, shop:vShop, manage:vManage, prices:vPrices, ticket:vTicket, zones:vZones }[S.screen];
+  const v = { home:vHome, list:vList, editor:vEditor, cook:vCook, recap:vRecap, shop:vShop, manage:vManage, prices:vPrices, ticket:vTicket, zones:vZones, settings:vSettings }[S.screen];
   app.innerHTML = v();
   document.body.dataset.screen = S.screen;
   if (S.screen === 'cook') updMic();
@@ -1284,6 +1340,9 @@ document.addEventListener('click', async e => {
     case 'z-auto': { const files = S.zones.files; freeZones(); S.screen = 'editor'; render(); readPhoto(files); break; }
     case 'z-read': readZones(); break;
     case 'tk-cancel': S.ticket = null; S.screen = 'prices'; render(); break;
+    case 'go-settings': S.screen = 'settings'; render(); window.scrollTo(0, 0); break;
+    case 'backup-save': saveBackup(); break;
+    case 'backup-share': shareBackup(); break;
     case 'go-manage': S.screen = 'manage'; render(); window.scrollTo(0, 0); break;
     case 'shop-minus': case 'shop-plus': { const p = S.shop.sel[id]; if (p == null) break; S.shop.sel[id] = Math.max(1, Math.min(50, p + (a === 'shop-plus' ? 1 : -1))); render(); break; }
     case 'shop-send': sendShop(); break;
@@ -1329,6 +1388,7 @@ document.addEventListener('click', async e => {
     /* cuisson */
     case 'quit': quitCook(); break;
     case 'mic-retry': ensureAudio(); micRetry(); break;
+    case 'mic-test': micTest(); break;
     case 'cook-edit': { const id = S.cook.rid; stopAlarm(); stopVoice(); keepAwake(false); hush(); S.cook = null; S.screen = 'manage'; openEditor(id); break; }
     case 'por-minus': setPortions(S.cook.portions - 1); break;
     case 'por-plus': setPortions(S.cook.portions + 1); break;
@@ -1385,6 +1445,7 @@ document.addEventListener('change', e => {
     if (fk === 'ticket') readTicket(files.slice(0, 4));
     else if (fk === 'photo') openZones(files.slice(0, 4));
     else if (fk === 'import') importFiles(files);
+    else if (fk === 'restore') restoreFile(files[0]);
     return;
   }
   const k = e.target.dataset && e.target.dataset.setting;
@@ -1886,6 +1947,41 @@ async function readZones(){
     status(e && e.message === 'load' ? 'Impossible de charger le module de lecture : vérifie ta connexion internet, nécessaire la première fois.' : e && e.code === 'not_granted' ? 'La lecture de la photo n’a pas été autorisée.' : 'La lecture a échoué. Essaie des cadres un peu plus larges, sur une photo nette et bien éclairée.', 0);
     const btn = $('#sheet [data-act="ph-cancel"]'); if (btn) btn.textContent = 'Fermer';
   }
+}
+
+/* ---------- Sauvegarde globale ---------- */
+const BKEY = 'pasapas:derniere-sauvegarde';
+function backupText(){
+  return JSON.stringify({ format:'pas-a-pas-sauvegarde', version:1, app:APP_VERSION, date:new Date().toISOString(), recettes:S.recipes.map(r => ({ id:r.id, texte:serialize(r) })), prix:S.prices, materiel:load(MKEY, {}), reglages:S.settings }, null, 1);
+}
+const backupName = () => `pas-a-pas-sauvegarde-${new Date().toISOString().slice(0, 10)}.txt`;
+function markBackup(){ store(BKEY, new Date().toISOString()); if (S.screen === 'settings' || S.screen === 'home') render(); }
+async function saveBackup(){ await exportText(backupName(), backupText()); markBackup(); }
+async function shareBackup(){
+  const f = new File([backupText()], backupName(), { type:'text/plain' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files:[f] })) { await navigator.share({ files:[f], title:'Sauvegarde Pas à pas' }); markBackup(); toast('Sauvegarde envoyée'); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  toast('L’envoi n’est pas disponible ici : utilise « Enregistrer la sauvegarde ».');
+}
+async function restoreFile(file){
+  let d = null; try { d = JSON.parse(await file.text()); } catch (e) {}
+  if (!d || d.format !== 'pas-a-pas-sauvegarde' || !Array.isArray(d.recettes)) { toast('Ce fichier n’est pas une sauvegarde Pas à pas.'); return; }
+  const np = (d.prix || []).length;
+  const how = await ask('Restaurer la sauvegarde ?', `Sauvegarde du ${fmtDateFr(String(d.date || '').slice(0, 10))} : ${plural(d.recettes.length, 'recette')}, ${np} prix. « Ajouter » garde tes données actuelles et complète avec la sauvegarde ; « Tout remplacer » efface d’abord ce qui est sur le téléphone.`, [{ label:'Ajouter aux données actuelles', value:'merge', kind:'primary' }, { label:'Tout remplacer', value:'replace', kind:'danger' }, { label:'Annuler', value:null }]);
+  if (!how) return;
+  const recs = [];
+  d.recettes.forEach(f => { try { const { recipe } = parse(f.texte); recipe.id = f.id || uid(); recs.push(recipe); } catch (e) {} });
+  if (how === 'replace') {
+    S.recipes = recs; S.prices = Array.isArray(d.prix) ? d.prix : [];
+    store(MKEY, d.materiel || {});
+    if (d.reglages) { S.settings = Object.assign(S.settings, d.reglages); store(SKEY, S.settings); }
+  } else {
+    recs.forEach(r => { if (!S.recipes.some(x => x.id === r.id || norm(x.titre) === norm(r.titre))) S.recipes.push(r); });
+    (d.prix || []).forEach(p => { if (p && p.name && !S.prices.some(x => norm(x.name) === norm(p.name))) S.prices.push(p); });
+    store(MKEY, Object.assign({}, d.materiel || {}, load(MKEY, {})));
+  }
+  persist(); savePrices(); render(); toast('Sauvegarde restaurée');
 }
 
 S.prices = load(PKEY, []);
