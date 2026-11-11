@@ -265,6 +265,13 @@ label.btn{cursor:pointer;position:relative}
 
 .ver{text-align:center;color:var(--muted);font-size:13px;margin:32px 0 0;opacity:.8}
 
+.matlist li{margin:8px 0}
+.matline{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.iconbtn.matbtn{width:38px;height:38px;font-size:20px;border-radius:50%;flex:none}
+.matprec{font-size:15px;color:var(--muted);margin-top:2px}
+.chrono{display:inline-flex;align-items:center;gap:8px;font-size:16px;color:var(--muted)}
+.chrono b{font-family:var(--f-head);font-size:26px;color:var(--ink);font-variant-numeric:tabular-nums}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -283,7 +290,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.15';
+const APP_VERSION = '1.16';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -761,7 +768,7 @@ function goStep(i){
   c.i = i; const st = c.r.etapes[i];
   const tt = st.temps ? Math.max(1, Math.round(st.temps * c.f)) : 0;
   c.t = tt ? { base:tt, total:tt, remaining:tt, endAt:0, running:false, done:false } : null;
-  c.stepStart = Date.now();
+  c.stepStart = Date.now(); c.workStart = null;
   render(); window.scrollTo(0, 0);
   let text = `Étape ${i + 1}. ${st.instruction}`;
   if (S.settings.lireNotes && st.notes.length) text += `. Note : ${st.notes.join('. ')}`;
@@ -771,7 +778,7 @@ function goStep(i){
 function finishStep(){
   const c = S.cook; if (!c) return;
   if (c.i < 0) return goStep(0);
-  const st = c.r.etapes[c.i], d = Math.max(1, Math.round((Date.now() - c.stepStart) / 1000));
+  const st = c.r.etapes[c.i], d = Math.max(1, Math.round((Date.now() - (c.workStart || c.stepStart)) / 1000));
   st.tempsReels = [d, ...st.tempsReels].slice(0, 5);
   c.results[c.i] = d; persist();
   if (c.i >= c.r.etapes.length - 1) return endCook();
@@ -809,12 +816,20 @@ function recordMat(){
 }
 function matIntro(c){
   if (!c.mats.length) return '';
-  const gmv = load(MKEY, {});
-  return `<h3 class="sub">Matériel nécessaire</h3><ul class="inglist">${c.mats.map((m, k) => {
-    const known = c.r.ecarts.filter(x => norm(x.item) === norm(m));
-    const opts = [...new Set([...known.map(x => x.variant), gmv[norm(m)]].filter(Boolean))];
-    return `<li>${esc(m)}<div class="matv"><input id="mv-${k}" data-f="matv" data-k="${k}" list="dl-${k}" value="${esc(c.mat[m] || '')}" placeholder="Lequel ? (facultatif : induction, fonte…)" autocomplete="off" aria-label="Modèle de ${esc(m)} utilisé"><datalist id="dl-${k}">${opts.map(o => `<option value="${esc(o)}">`).join('')}</datalist>${known.length ? `<ul class="gaps">${known.map(x => `<li>${esc(x.variant)} : ${gapText(x.avg)} en moyenne, sur ${x.n} fois</li>`).join('')}</ul>` : ''}</div></li>`;
+  return `<h3 class="sub">Matériel nécessaire</h3><ul class="inglist matlist">${c.mats.map((m, k) => {
+    const v = (c.mat[m] || '').trim();
+    return `<li><div class="matline"><span>${esc(m)}</span><button class="iconbtn matbtn" data-act="mat-edit" data-k="${k}" aria-label="${v ? 'Modifier la précision' : 'Ajouter une précision'} pour ${esc(m)}">${v ? '✎' : '+'}</button></div>${v ? `<div class="matprec">${esc(v)}</div>` : ''}</li>`;
   }).join('')}</ul>`;
+}
+function matSheet(k){
+  const c = S.cook, m = c.mats[k]; if (!m) return;
+  const gmv = load(MKEY, {}), v = c.mat[m] || '';
+  const known = c.r.ecarts.filter(x => norm(x.item) === norm(m));
+  const opts = [...new Set([...known.map(x => x.variant), gmv[norm(m)]].filter(Boolean))];
+  sheet(`<h3>${esc(m)}</h3><p>Précise le modèle utilisé (facultatif) : il sert à mesurer le temps gagné ou perdu avec ce matériel.</p>
+  <input id="mv-in" list="dl-mv" value="${esc(v)}" placeholder="ex. induction, fonte, inox…" autocomplete="off"><datalist id="dl-mv">${opts.map(o => `<option value="${esc(o)}">`).join('')}</datalist>
+  ${known.length ? `<ul class="gaps">${known.map(x => `<li>${esc(x.variant)} : ${gapText(x.avg)} en moyenne, sur ${x.n} fois</li>`).join('')}</ul>` : ''}
+  <div class="acts"><button class="btn primary" data-act="mat-save" data-k="${k}">Valider</button>${v ? `<button class="btn" data-act="mat-clear" data-k="${k}">Retirer la précision</button>` : ''}<button class="btn" data-act="close-sheet">Annuler</button></div>`);
 }
 function matEstText(){
   const c = S.cook; if (!c || !c.mats) return '';
@@ -857,7 +872,9 @@ function readIngredients(){
 /* Minuteur */
 function tStart(){
   const c = S.cook, t = c && c.t;
-  if (!t) return say('Pas de minuteur pour cette étape.', true);
+  if (!c || c.i < 0) return;
+  if (!c.workStart) c.workStart = Date.now();
+  if (!t) { render(); return say('Chrono lancé.', true); }
   if (t.running) return;
   if (t.remaining <= 0) { t.remaining = t.total; t.done = false; }
   t.endAt = Date.now() + t.remaining * 1000; t.running = true; updTimer(true);
@@ -888,6 +905,8 @@ function updTimer(controls){
   if (controls) $('#tctl').innerHTML = ctlHtml(t);
 }
 setInterval(() => {
+  const c0 = S.cook, ch = $('#chr');
+  if (c0 && c0.workStart && ch) ch.textContent = fmtClock((Date.now() - c0.workStart) / 1000);
   const c = S.cook; if (!c || !c.t || !c.t.running) return;
   const rem = (c.t.endAt - Date.now()) / 1000;
   if (rem <= 0) { c.t.running = false; c.t.remaining = 0; c.t.done = true; updTimer(true); startAlarm(); }
@@ -1127,7 +1146,7 @@ function vCook(){
   }
   const st = r.etapes[c.i], next = r.etapes[c.i + 1], t = c.t;
   const timer = t ? `<div class="timer${t.done ? ' done' : ''}" id="timer"><div class="dial"><svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="tgrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--g1)"/><stop offset="1" style="stop-color:var(--g2)"/></linearGradient></defs><circle class="track" cx="60" cy="60" r="54" fill="none" stroke-width="10"/><circle id="tfill" class="fill" cx="60" cy="60" r="54" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="${RING}" stroke-dashoffset="${RING * (1 - t.remaining / t.total)}"/></svg><div class="t" id="tval" role="timer">${fmtClock(t.remaining)}</div></div><div><p class="tlabel">Temps estimé${c.f !== 1 ? ` pour ${plural(c.portions, 'portion')}` : ''} : ${fmtDur(t.base)}</p><div class="ctl" id="tctl">${ctlHtml(t)}</div></div></div>`
-    : `<div class="row-btns"><button class="btn mini" data-act="t-add">Ajouter un minuteur d’1 min</button></div>`;
+    : `<div class="timer"><div><p class="tlabel">Pas de temps prévu pour cette étape</p><div class="ctl">${c.workStart ? `<span class="chrono">Chrono <b id="chr">${fmtClock((Date.now() - c.workStart) / 1000)}</b></span>` : `<button class="btn mini primary" data-act="t-start">Démarrer</button>`}<button class="btn mini" data-act="t-add">Minuteur d’1 min</button></div></div></div>`;
   return top + `<div class="progress"><i style="width:${(c.i / n) * 100}%"></i></div>
   <p class="stepno">Étape ${c.i + 1} sur ${n}</p>
   <p class="instr">${esc(st.instruction)}</p>
@@ -1395,6 +1414,8 @@ document.addEventListener('click', async e => {
     case 'quit': quitCook(); break;
     case 'mic-retry': ensureAudio(); micRetry(); break;
     case 'mic-test': micTest(); break;
+    case 'mat-edit': matSheet(+b.dataset.k); break;
+    case 'mat-save': case 'mat-clear': { const c = S.cook, m = c && c.mats[+b.dataset.k]; if (!m) break; c.mat[m] = a === 'mat-save' ? (sheetVals['mv-in'] || '').trim() : ''; render(); break; }
     case 'cook-edit': { const id = S.cook.rid; stopAlarm(); stopVoice(); keepAwake(false); hush(); S.cook = null; S.screen = 'manage'; openEditor(id); break; }
     case 'por-minus': setPortions(S.cook.portions - 1); break;
     case 'por-plus': setPortions(S.cook.portions + 1); break;
