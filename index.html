@@ -272,6 +272,18 @@ label.btn{cursor:pointer;position:relative}
 .chrono{display:inline-flex;align-items:center;gap:8px;font-size:16px;color:var(--muted)}
 .chrono b{font-family:var(--f-head);font-size:26px;color:var(--ink);font-variant-numeric:tabular-nums}
 
+.thumbs{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 4px}
+.thumb{position:relative}
+.thumbimg{display:block;width:96px;height:96px;padding:0;border:1.5px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);cursor:zoom-in}
+.thumbimg img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .zdel{--zc:var(--alert);border-radius:0 10px 0 8px}
+.thumbcap{font-size:13px;color:var(--muted);margin-top:4px;text-align:center}
+#viewer{position:fixed;inset:0;z-index:50;background:#000;display:flex;align-items:center;justify-content:center;overflow:auto;padding-top:env(safe-area-inset-top,0px)}
+#viewer img{max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in}
+#viewer.zoom{align-items:flex-start;justify-content:flex-start}
+#viewer.zoom img{max-width:none;max-height:none;width:250%;cursor:zoom-out}
+#viewer .vclose{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:12px;width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.9);color:#000;font-size:22px;font-weight:700;cursor:pointer;z-index:51}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -290,7 +302,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.20';
+const APP_VERSION = '1.21';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -378,10 +390,10 @@ function fmtShopQty(q, base){
 }
 
 /* ---------- Format texte à marqueurs ---------- */
-const MARKERS = { 'recette':1, 'description':1, 'portions':1, 'ingredient':1, 'ingredients':1, 'etape':1, 'temps':1, 'temps reel':1, 'temps reels':1, 'note':1, 'materiel':1, 'ecart materiel':1, 'ecart':1 };
+const MARKERS = { 'recette':1, 'description':1, 'portions':1, 'ingredient':1, 'ingredients':1, 'etape':1, 'temps':1, 'temps reel':1, 'temps reels':1, 'note':1, 'photo':1, 'materiel':1, 'ecart materiel':1, 'ecart':1 };
 function parse(text, opts = {}){
   const lines = String(text).replace(/\r/g, '').split('\n');
-  const r = { titre:'', description:'', portions:null, ingredients:[], materiel:[], etapes:[], ecarts:[] };
+  const r = { titre:'', description:'', portions:null, ingredients:[], materiel:[], etapes:[], ecarts:[], photos:[] };
   let cur = null, last = null;
   const append = (val) => {
     if (!last) return false;
@@ -416,6 +428,7 @@ function parse(text, opts = {}){
       if (cur) cur.tempsReels = v.split(/[,;]/).map(parseDuration).filter(x => x != null).slice(0, 5);
       last = null;
     }
+    else if (k === 'photo') { if (v) r.photos.push(v); last = null; }
     else if (k === 'materiel') {
       const arr = cur ? cur.materiel : r.materiel;
       arr.push(v); last = { arr, i: arr.length - 1 };
@@ -440,6 +453,7 @@ function serialize(r){
   multi('Recette', r.titre || '');
   if (r.description) multi('Description', r.description);
   if (r.portions) out.push(`Portions : ${r.portions}`);
+  (r.photos || []).forEach(p => out.push(`Photo : ${p}`));
   const gi = (r.ingredients || []).filter(x => x && x.trim());
   if (gi.length) { out.push(''); gi.forEach(x => out.push(`Ingrédient : ${x}`)); }
   const gmat = (r.materiel || []).filter(x => x && x.trim());
@@ -1107,6 +1121,7 @@ function vEditor(){
   const bar = `<div class="savebar"><button class="btn primary" data-act="save">Enregistrer la recette</button></div>`;
   if (S.tab === 'text') return head + `<p class="hint">Un marqueur en début de ligne : Recette, Description, Portions, Ingrédient, Matériel, Étape, Temps, Note. « Temps réel » et « Écart matériel » sont remplis par l’application.</p><textarea id="rawtext" class="raw" spellcheck="false" aria-label="Texte de la recette">${esc(serialize(d))}</textarea>` + bar;
   return head + `
+  ${thumbs(d.photos, true)}
   ${SR ? `<p class="hint">Touche le micro à côté d’un champ pour le remplir à la voix.</p>` : ''}
   <div class="lbl">Nom de la recette</div>
   <div class="withmic"><input id="f-titre" data-f="titre" value="${esc(d.titre)}" maxlength="100" placeholder="Risotto aux champignons" aria-label="Nom de la recette">${micBtn('f-titre', 'space')}</div>
@@ -1131,6 +1146,7 @@ function vCook(){
     const ratio = c.f > 1 ? `multipliés par ${fmtQty(c.f)}` : `divisés par ${fmtQty(1 / c.f)}`;
     return top + `<div class="progress"><i style="width:0%"></i></div>
     <p class="stepno">${esc(r.titre)}</p><h2 class="instr">Pour combien de portions ?</h2>
+    ${thumbs(r.photos, false)}
     ${r.description ? `<p class="desc">${esc(r.description)}</p>` : ''}
     <div class="stepper"><button class="iconbtn big" data-act="por-minus" aria-label="Une portion de moins" ${c.portions <= 1 ? 'disabled' : ''}>−</button><output id="por" aria-live="polite">${c.portions}</output><button class="iconbtn big" data-act="por-plus" aria-label="Une portion de plus" ${c.portions >= 50 ? 'disabled' : ''}>+</button></div>
     <p class="porhint">${r.portions ? `Recette prévue pour ${plural(r.portions, 'portion')}${c.f !== 1 ? ` : quantités et temps ${ratio}` : ''}.` : 'La recette n’indique pas de portions : 1 correspond aux quantités d’origine.'}</p>
@@ -1155,7 +1171,7 @@ function vCook(){
   ${st.notes.map(x => `<div class="notebox">${esc(x)}</div>`).join('')}
   ${timer}
   ${st.tempsReels.length ? `<p class="past">Les dernières fois : ${st.tempsReels.map(fmtDur).join(', ')}</p>` : ''}
-  <div class="row-btns"><button class="btn mini" data-act="note">${SR && V.state === 'on' ? 'Dicter une note' : 'Ajouter une note'}</button><button class="btn mini" data-act="repeat">Relire l’étape</button></div>
+  <div class="row-btns"><button class="btn mini" data-act="note">${SR && V.state === 'on' ? 'Dicter une note' : 'Ajouter une note'}</button><button class="btn mini" data-act="repeat">Relire l’étape</button>${(r.photos || []).length ? `<button class="btn mini" data-act="photo-view" data-id="${esc(r.photos[0])}">Recette d’origine</button>` : ''}</div>
   <p class="next">${next ? `Ensuite : ${esc(firstWords(next.instruction, 12))}` : 'C’est la dernière étape.'}</p>
   <div class="cookbar"><button class="btn back-btn" data-act="prev" aria-label="Étape précédente">‹</button><button class="btn primary done-btn" data-act="next">Étape terminée</button></div>`;
 }
@@ -1210,7 +1226,7 @@ function render(){
   app.innerHTML = v();
   document.body.dataset.screen = S.screen;
   if (S.screen === 'cook') updMic();
-  renderAlarm(); renderNote();
+  renderAlarm(); renderNote(); hydratePhotos();
 }
 
 /* ---------- Éditeur ---------- */
@@ -1218,7 +1234,7 @@ const blankStep = () => ({ instruction:'', temps:null, tempsReels:[], ingredient
 function openEditor(id){
   const r = id ? find(id) : null;
   S.from = S.screen;
-  S.draft = r ? JSON.parse(JSON.stringify(r)) : { id:null, titre:'', description:'', portions:4, ingredients:[''], materiel:[''], etapes:[blankStep()], ecarts:[] };
+  S.draft = r ? JSON.parse(JSON.stringify(r)) : { id:null, titre:'', description:'', portions:4, ingredients:[''], materiel:[''], etapes:[blankStep()], ecarts:[], photos:[] };
   S.tab = 'form'; S.editErr = ''; S.screen = 'editor'; render(); window.scrollTo(0, 0);
 }
 function clean(d){
@@ -1379,11 +1395,11 @@ document.addEventListener('click', async e => {
     case 'edit': openEditor(id); break;
     case 'export': { const r = find(id); if (r) exportText(fileName(r), serialize(r)); break; }
     case 'duplicate': { const r = find(id); if (!r) break; const c = JSON.parse(JSON.stringify(r)); c.id = uid(); c.titre = uniqueTitle(`${r.titre} (copie)`); c.etapes.forEach(x => { x.tempsReels = []; }); c.ecarts = []; S.recipes.push(c); persist(); render(); toast('Recette dupliquée'); break; }
-    case 'delete': { const r = find(id); if (!r) break; const ok = await ask('Supprimer cette recette ?', `« ${r.titre} » sera retirée de l’application.`, [{ label:'Supprimer', value:true, kind:'danger' }, { label:'Garder la recette', value:false }]); if (ok) { S.recipes = S.recipes.filter(x => x.id !== id); persist(); render(); toast('Recette supprimée'); } break; }
+    case 'delete': { const r = find(id); if (!r) break; const ok = await ask('Supprimer cette recette ?', `« ${r.titre} » sera retirée de l’application.`, [{ label:'Supprimer', value:true, kind:'danger' }, { label:'Garder la recette', value:false }]); if (ok) { S.recipes = S.recipes.filter(x => x.id !== id); persist(); render(); gcPhotos(); toast('Recette supprimée'); } break; }
     case 'close-sheet': break;
     case 'copy': { const ta = $('#sheet textarea'); try { await navigator.clipboard.writeText(ta.value); toast('Texte copié'); } catch (err) { ta.select(); try { document.execCommand('copy'); toast('Texte copié'); } catch (x) { toast('Sélectionne le texte et copie-le.'); } } break; }
     /* éditeur */
-    case 'cancel-edit': { const ok = await ask('Quitter sans enregistrer ?', 'Les modifications de cette recette seront perdues.', [{ label:'Quitter', value:true, kind:'danger' }, { label:'Continuer à modifier', value:false }]); if (ok) { S.draft = null; S.screen = ['list', 'manage'].includes(S.from) ? S.from : 'home'; render(); } break; }
+    case 'cancel-edit': { const ok = await ask('Quitter sans enregistrer ?', 'Les modifications de cette recette seront perdues.', [{ label:'Quitter', value:true, kind:'danger' }, { label:'Continuer à modifier', value:false }]); if (ok) { S.draft = null; setTimeout(gcPhotos, 500); S.screen = ['list', 'manage'].includes(S.from) ? S.from : 'home'; render(); } break; }
     case 'tab': { const to = b.dataset.tab; if (to === S.tab) break; if (S.tab === 'text') { try { readRaw(); S.editErr = ''; } catch (err) { S.editErr = err.message; render(); break; } } S.tab = to; render(); break; }
     case 'add-ing': d.ingredients.push(''); render(); { const l = document.querySelectorAll('[data-f="ing"]'); l.length && l[l.length - 1].focus(); } break;
     case 'del-ing': d.ingredients.splice(i, 1); render(); break;
@@ -1408,12 +1424,16 @@ document.addEventListener('click', async e => {
       if (err) { if (!dr.etapes.length) dr.etapes.push(blankStep()); if (!dr.ingredients.length) dr.ingredients.push(''); S.editErr = err; render(); window.scrollTo(0, 0); break; }
       const idx = dr.id ? S.recipes.findIndex(x => x.id === dr.id) : -1;
       if (idx >= 0) S.recipes[idx] = dr; else { dr.id = dr.id || uid(); S.recipes.push(dr); }
-      persist(); S.draft = null; S.screen = S.from === 'manage' ? 'manage' : 'list'; render(); window.scrollTo(0, 0); toast('Recette enregistrée'); break;
+      persist(); S.draft = null; setTimeout(gcPhotos, 500); S.screen = S.from === 'manage' ? 'manage' : 'list'; render(); window.scrollTo(0, 0); toast('Recette enregistrée'); break;
     }
     /* cuisson */
     case 'quit': quitCook(); break;
     case 'mic-retry': ensureAudio(); micRetry(); break;
     case 'mic-test': micTest(); break;
+    case 'photo-view': viewPhoto(b.dataset.id); break;
+    case 'photo-del': if (S.draft) { S.draft.photos.splice(+b.dataset.i, 1); render(); } break;
+    case 'viewer-close': closeViewer(); break;
+    case 'viewer-zoom': { const v = $('#viewer'); if (v) v.classList.toggle('zoom'); break; }
     case 'mat-edit': matSheet(+b.dataset.k); break;
     case 'mat-save': case 'mat-clear': { const c = S.cook, m = c && c.mats[+b.dataset.k]; if (!m) break; c.mat[m] = a === 'mat-save' ? (sheetVals['mv-in'] || '').trim() : ''; render(); break; }
     case 'cook-edit': { const id = S.cook.rid; stopAlarm(); stopVoice(); keepAwake(false); hush(); S.cook = null; S.screen = 'manage'; openEditor(id); break; }
@@ -1613,7 +1633,7 @@ function textToMarkers(raw){
   steps.forEach(st => { out.push('', `Étape : ${st}`); const d = guessTime(st); if (d) out.push(`Temps : ${fmtDur(d)}`); });
   return out.join('\n');
 }
-function applyRecipeText(markers, src){
+function applyRecipeText(markers, src, files){
   let recipe;
   try { recipe = parse(markers, { lenient:true }).recipe; } catch (e) { toast(e.message); return false; }
   if (!recipe.etapes.length && !recipe.ingredients.length) { toast(src === 'photo' ? 'Aucun texte de recette reconnu sur la photo.' : 'Aucune recette reconnue dans ce texte.'); return false; }
@@ -1622,7 +1642,9 @@ function applyRecipeText(markers, src){
   if (!recipe.ingredients.length && !recipe.etapes.some(e => e.ingredients.length)) recipe.ingredients.push('');
   if (!recipe.materiel.length) recipe.materiel.push('');
   if (!recipe.etapes.length) recipe.etapes.push(blankStep());
+  recipe.photos = [...(old.photos || []), ...(recipe.photos || [])];
   S.draft = recipe; S.tab = 'form';
+  if (files && files.length) attachPhotos(files);
   S.editErr = src === 'photo' ? 'Recette lue depuis la photo : la lecture automatique peut se tromper, vérifie chaque champ avant d’enregistrer.' : 'Recette analysée : vérifie les ingrédients, les étapes et les temps avant d’enregistrer.';
   render(); window.scrollTo(0, 0);
   return true;
@@ -1650,7 +1672,7 @@ async function readPhotoLocal(files){
     if (cancelled || S.screen !== 'editor') return;
     const markers = textToMarkers(texts.join('\n'));
     closeSheet();
-    applyRecipeText(markers, 'photo');
+    applyRecipeText(markers, 'photo', files);
   } catch (e) {
     if (worker) { try { await worker.terminate(); } catch (x) {} }
     if (cancelled) return;
@@ -1678,7 +1700,8 @@ async function readPhotoClaude(files){
     recipe.id = old.id || null; recipe.ecarts = old.ecarts || [];
     if (!recipe.ingredients.length && !recipe.etapes.some(e => e.ingredients.length)) recipe.ingredients.push('');
     if (!recipe.etapes.length) recipe.etapes.push(blankStep());
-    S.draft = recipe; S.tab = 'form';
+    recipe.photos = [...(old.photos || []), ...(recipe.photos || [])];
+    S.draft = recipe; S.tab = 'form'; attachPhotos(files);
     S.editErr = 'Recette lue depuis la photo : vérifie les quantités, les temps et les étapes avant d’enregistrer.';
     closeSheet(); render(); window.scrollTo(0, 0);
   } catch (e) {
@@ -1693,7 +1716,6 @@ async function readPhotoClaude(files){
   }
 }
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 /* ---------- Tickets de caisse ---------- */
 function vPrices(){
   const missing = ingNames().filter(n => { const p = findPrice(n); return !p || p.perBase == null; });
@@ -2043,8 +2065,8 @@ async function readZones(){
     const per = jobs.map(() => []); texts.forEach((x, i) => per[owner[i]].push(x || ''));
     jobs.forEach((j, n) => by[j.r.type].push(per[n].join('\n')));
     const markers = zonesToMarkers(by);
-    closeSheet(); freeZones(); S.screen = 'editor';
-    applyRecipeText(markers, 'photo');
+    const zfiles = z.files; closeSheet(); freeZones(); S.screen = 'editor';
+    applyRecipeText(markers, 'photo', zfiles);
   } catch (e) {
     if (cancelled) return;
     status(e && e.message === 'load' ? 'Impossible de charger le module de lecture : vérifie ta connexion internet, nécessaire la première fois.' : e && e.code === 'not_granted' ? 'La lecture de la photo n’a pas été autorisée.' : 'La lecture a échoué. Essaie des cadres un peu plus larges, sur une photo nette et bien éclairée.', 0);
@@ -2054,14 +2076,14 @@ async function readZones(){
 
 /* ---------- Sauvegarde globale ---------- */
 const BKEY = 'pasapas:derniere-sauvegarde';
-function backupText(){
-  return JSON.stringify({ format:'pas-a-pas-sauvegarde', version:1, app:APP_VERSION, date:new Date().toISOString(), recettes:S.recipes.map(r => ({ id:r.id, texte:serialize(r) })), prix:S.prices, materiel:load(MKEY, {}), reglages:S.settings }, null, 1);
+function backupText(photos){
+  return JSON.stringify({ photos:photos || {}, format:'pas-a-pas-sauvegarde', version:1, app:APP_VERSION, date:new Date().toISOString(), recettes:S.recipes.map(r => ({ id:r.id, texte:serialize(r) })), prix:S.prices, materiel:load(MKEY, {}), reglages:S.settings }, null, 1);
 }
 const backupName = () => `boudines-cook-sauvegarde-${new Date().toISOString().slice(0, 10)}.txt`;
 function markBackup(){ store(BKEY, new Date().toISOString()); if (S.screen === 'settings' || S.screen === 'home') render(); }
-async function saveBackup(){ await exportText(backupName(), backupText()); markBackup(); }
+async function saveBackup(){ await exportText(backupName(), backupText(await photosForBackup())); markBackup(); }
 async function shareBackup(){
-  const f = new File([backupText()], backupName(), { type:'text/plain' });
+  const f = new File([backupText(await photosForBackup())], backupName(), { type:'text/plain' });
   try {
     if (navigator.canShare && navigator.canShare({ files:[f] })) { await navigator.share({ files:[f], title:'Sauvegarde Boudine’s cook' }); markBackup(); toast('Sauvegarde envoyée'); return; }
   } catch (e) { if (e && e.name === 'AbortError') return; }
@@ -2078,16 +2100,90 @@ async function restoreFile(file){
   if (how === 'replace') {
     S.recipes = recs; S.prices = Array.isArray(d.prix) ? d.prix : [];
     store(MKEY, d.materiel || {});
+    try { (await IDB.keys()).forEach(k => IDB.del(k)); } catch (e) {}
     if (d.reglages) { S.settings = Object.assign(S.settings, d.reglages); store(SKEY, S.settings); }
   } else {
     recs.forEach(r => { if (!S.recipes.some(x => x.id === r.id || norm(x.titre) === norm(r.titre))) S.recipes.push(r); });
     (d.prix || []).forEach(p => { if (p && p.name && !S.prices.some(x => norm(x.name) === norm(p.name))) S.prices.push(p); });
     store(MKEY, Object.assign({}, d.materiel || {}, load(MKEY, {})));
   }
+  await restorePhotos(d.photos || {});
   persist(); savePrices(); render(); toast('Sauvegarde restaurée');
 }
 
+/* ---------- Photos des recettes (stockées dans le téléphone) ---------- */
+const IDB = (() => {
+  let p = null;
+  const open = () => p || (p = new Promise((res, rej) => { const r = indexedDB.open('pasapas', 1); r.onupgradeneeded = () => r.result.createObjectStore('photos'); r.onsuccess = () => res(r.result); r.onerror = () => { p = null; rej(r.error); }; }));
+  const tx = async (mode, fn) => { const db = await open(); return new Promise((res, rej) => { const t = db.transaction('photos', mode), rq = fn(t.objectStore('photos')); t.oncomplete = () => res(rq ? rq.result : undefined); t.onerror = () => rej(t.error); }); };
+  return { put:(k, v) => tx('readwrite', s => s.put(v, k)), get:k => tx('readonly', s => s.get(k)), del:k => tx('readwrite', s => s.delete(k)), keys:() => tx('readonly', s => s.getAllKeys()) };
+})();
+const photoURLs = {};
+function compressImage(file, max = 1600, q = 0.82){
+  return new Promise(res => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight)), cv = document.createElement('canvas');
+      cv.width = Math.round(img.naturalWidth * k); cv.height = Math.round(img.naturalHeight * k);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+      cv.toBlob(b => res(b), 'image/jpeg', q);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); res(null); };
+    img.src = url;
+  });
+}
+async function attachPhotos(files){
+  if (!files || !files.length || !S.draft) return;
+  const draft = S.draft;
+  for (const f of files) {
+    try { const b = await compressImage(f); if (!b) continue; const id = 'img-' + uid(); await IDB.put(id, b); draft.photos = draft.photos || []; draft.photos.push(id); }
+    catch (e) { toast('La photo n’a pas pu être enregistrée.'); }
+  }
+  if (S.draft === draft && S.screen === 'editor') render();
+}
+async function photoURL(id){
+  if (photoURLs[id]) return photoURLs[id];
+  try { const b = await IDB.get(id); if (b) return (photoURLs[id] = URL.createObjectURL(b)); } catch (e) {}
+  return null;
+}
+function thumbs(ids, editable){
+  if (!ids || !ids.length) return '';
+  return `<div class="thumbs">${ids.map((id, i) => `<div class="thumb"><button class="thumbimg" data-act="photo-view" data-id="${esc(id)}" aria-label="Agrandir la photo de la recette"><img data-photo="${esc(id)}" alt=""></button>${editable ? `<button class="zdel" data-act="photo-del" data-i="${i}" aria-label="Retirer cette photo">✕</button>` : ''}</div>`).join('')}</div>${editable ? '' : '<p class="thumbcap" style="text-align:left">Touche la photo pour l’agrandir</p>'}`;
+}
+function hydratePhotos(){
+  document.querySelectorAll('img[data-photo]:not([src])').forEach(async img => {
+    const u = await photoURL(img.dataset.photo);
+    if (u) img.src = u; else { const box = img.closest('.thumb'); if (box) box.remove(); }
+  });
+}
+async function viewPhoto(id){
+  const u = await photoURL(id); if (!u) { toast('Photo introuvable sur ce téléphone.'); return; }
+  closeViewer();
+  const v = document.createElement('div'); v.id = 'viewer'; v.setAttribute('role', 'dialog'); v.setAttribute('aria-label', 'Photo de la recette');
+  v.innerHTML = `<img src="${u}" alt="Photo de la recette" data-act="viewer-zoom"><button class="vclose" data-act="viewer-close" aria-label="Fermer">✕</button>`;
+  document.body.appendChild(v);
+}
+function closeViewer(){ const v = $('#viewer'); if (v) v.remove(); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeViewer(); });
+async function gcPhotos(){
+  try {
+    const used = new Set([...S.recipes.flatMap(r => r.photos || []), ...((S.draft && S.draft.photos) || [])]);
+    for (const k of await IDB.keys()) if (!used.has(k)) { await IDB.del(k); if (photoURLs[k]) { URL.revokeObjectURL(photoURLs[k]); delete photoURLs[k]; } }
+  } catch (e) {}
+}
+const blobToDataURL = b => new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(b); });
+async function photosForBackup(){
+  const out = {};
+  try { for (const id of new Set(S.recipes.flatMap(r => r.photos || []))) { const b = await IDB.get(id); if (b) { const d = await blobToDataURL(b); if (d) out[id] = d; } } } catch (e) {}
+  return out;
+}
+async function restorePhotos(map){
+  for (const [id, d] of Object.entries(map || {})) { try { const b = await (await fetch(d)).blob(); await IDB.put(id, b); } catch (e) {} }
+}
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+
 S.prices = load(PKEY, []);
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 loadRecipes();
 render();
 initPhoto();
