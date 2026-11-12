@@ -290,7 +290,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.17';
+const APP_VERSION = '1.19';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -556,7 +556,7 @@ Temps : 2 min
 /* ---------- État ---------- */
 const S = {
   recipes: [],
-  settings: Object.assign({ lire:true, autoMinuteur:false, lireNotes:false }, load(SKEY, {})),
+  settings: Object.assign({ lire:true, autoMinuteur:true, lireNotes:false }, load(SKEY, {})),
   screen:'home', q:'', draft:null, tab:'form', editErr:'', from:'home', cook:null, shop:{ sel:{}, skip:{} }, shopText:'', prices:[], ticket:null
 };
 function persist(){ store(KEY, S.recipes.map(r => ({ id:r.id, texte:serialize(r) }))); }
@@ -762,7 +762,7 @@ function setPortions(n){
   c.portions = Math.max(1, Math.min(50, n)); c.f = c.portions / c.base;
   if (S.screen === 'cook' && c.i < 0) render();
 }
-function goStep(i){
+function goStep(i, auto){
   if (!S.cook || !S.cook.r.etapes[i]) return;
   const c = S.cook; stopAlarm(); cancelNote(true);
   c.i = i; const st = c.r.etapes[i];
@@ -773,16 +773,16 @@ function goStep(i){
   let text = `Étape ${i + 1}. ${st.instruction}`;
   if (S.settings.lireNotes && st.notes.length) text += `. Note : ${st.notes.join('. ')}`;
   say(text);
-  if (c.t && S.settings.autoMinuteur) tStart();
+  if (auto && S.settings.autoMinuteur) tStart(true);
 }
 function finishStep(){
   const c = S.cook; if (!c) return;
-  if (c.i < 0) { goStep(0); return tStart(true); }
+  if (c.i < 0) return goStep(0, true);
   const st = c.r.etapes[c.i], d = Math.max(1, Math.round((Date.now() - (c.workStart || c.stepStart)) / 1000));
   st.tempsReels = [d, ...st.tempsReels].slice(0, 5);
   c.results[c.i] = d; persist();
   if (c.i >= c.r.etapes.length - 1) return endCook();
-  goStep(c.i + 1);
+  goStep(c.i + 1, true);
 }
 function prevStep(){
   const c = S.cook; if (!c) return;
@@ -1048,7 +1048,7 @@ function vSettings(){
   <div class="stack" style="margin-top:12px"><button class="btn primary" data-act="backup-save">Enregistrer la sauvegarde</button>${canShare ? '<button class="btn" data-act="backup-share">Envoyer la sauvegarde (Drive, mail…)</button>' : ''}<label class="btn">Restaurer une sauvegarde<input type="file" accept=".txt,.json,text/plain,application/json" data-file="restore" class="vh"></label></div>
   <h3 class="sub">Réglages</h3>
   ${toggle('lire', 'Lire les étapes à voix haute')}
-  ${toggle('autoMinuteur', 'Démarrer le minuteur automatiquement')}
+  ${toggle('autoMinuteur', 'Démarrer le chrono à chaque nouvelle étape')}
   ${toggle('lireNotes', 'Lire les notes après chaque étape')}
   <h3 class="sub">Micro et voix</h3>
   <p class="hint" style="margin-top:0">Si la commande vocale ne marche pas, lance ce test : il vérifie chaque maillon (autorisation, micro, reconnaissance) et indique celui qui bloque.</p>
@@ -1592,7 +1592,7 @@ function textToMarkers(raw){
     if (pm && l.length < 45) continue;
     if (!title && !mode && l.length <= 80) { title = l; continue; }
     if (!mode) { if (sawHeader) continue; mode = 'auto'; }
-    if (mode === 'ing') ing.push(strip(l));
+    if (mode === 'ing') ing.push(...splitIngredients(strip(l)));
     else if (mode === 'mat') strip(l).split(/\s*[,;]\s*/).filter(Boolean).forEach(x => mat.push(cap(x)));
     else if (mode === 'step') stepLines.push(l);
     else { const s2 = strip(l); if (splitQty(s2) && s2.length < 60) ing.push(s2); else stepLines.push(l); }
@@ -1932,6 +1932,41 @@ function groupSteps(lines){
   });
   push(); return steps;
 }
+/* Découpe une ligne lue en plusieurs ingrédients */
+const ING_UNITS = 'kg|g|mg|l|cl|ml|dl|cs|cc|c\\.?\\s*(?:à|a)\\s*[sc]\\.?|cuill?[eè]res?|pinc[ée]es?|sachets?|gousses?|tranches?|verres?|tasses?|bottes?|bo[iî]tes?|brins?|feuilles?|morceaux?|pots?|branches?|poign[ée]es?|noix|noisettes?|filets?|zestes?';
+const QTY_AT = new RegExp(`(?:^|\\s)((?:\\d+(?:[.,]\\d+)?|\\d+\\s*\\/\\s*\\d+|[½¼¾⅓⅔])\\s*(?:${ING_UNITS})(?![a-zà-ÿ]))`, 'gi');
+const NUM_WORD = /(?:^|\s)((?:\d+(?:[.,]\d+)?|[½¼¾⅓⅔])\s+(?!(?:cm|mm|min|minutes?|secondes?|heures?|h|°|degr[ée]s?)\b)[a-zà-ÿœ]{3,})/gi;
+const KEEP_BEFORE = /(?:\bde|\bd['’]|\bdu|\bdes|\bà|\ba|\bou|\bet|\bx|\(|\/|-)\s*$/i;
+function splitIngredients(line){
+  let parts = [String(line || '').trim()];
+  // 1. signe devant l'ingrédient (puce, tiret entouré d'espaces, point-virgule), ou signe de tête répété
+  const lead = parts[0].match(/^([^\p{L}\p{N}\s(«"'’])/u);
+  parts = parts.flatMap(p => p.split(/\s*[•·▪●○◦✓☐;]\s*|\s+[-–—*]\s+/));
+  if (lead) { const esc1 = lead[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); parts = parts.flatMap(p => p.split(new RegExp(`\\s+${esc1}\\s*`))); }
+  // 2. une nouvelle mesure (250 g, 2 c. à s., 1 sachet…) ou un nouveau nombre suivi d'un mot, au milieu de la ligne
+  const cut = p => {
+    const idx = new Set();
+    const hasQty = !!splitQty(p);
+    if (!hasQty) {
+      // style « Farine 250 g Sucre 100 g » : la mesure suit le nom, on coupe après elle
+      QTY_AT.lastIndex = 0; let m; const ends = [];
+      while ((m = QTY_AT.exec(p))) { const e = m.index + m[0].length, rest = p.slice(e); if (rest.trim() && !/^\s*(de\b|d['’]|du\b|des\b|\))/i.test(rest)) ends.push(e); }
+      if (!ends.length) return [p];
+      const pos = [0, ...ends, p.length], out = [];
+      for (let i = 0; i < pos.length - 1; i++) out.push(p.slice(pos[i], pos[i + 1]));
+      return out;
+    }
+    for (const re of [QTY_AT, ...(hasQty ? [NUM_WORD] : [])]) {
+      re.lastIndex = 0; let m;
+      while ((m = re.exec(p))) { const at = m.index + m[0].length - m[1].length; if (at > 0 && !KEEP_BEFORE.test(p.slice(0, at))) idx.add(at); }
+    }
+    if (!idx.size) return [p];
+    const pos = [0, ...[...idx].sort((a, b) => a - b), p.length], out = [];
+    for (let i = 0; i < pos.length - 1; i++) out.push(p.slice(pos[i], pos[i + 1]));
+    return out;
+  };
+  return parts.flatMap(cut).map(x => x.replace(/^[^\p{L}\p{N}(½¼¾⅓⅔]+/u, '').replace(/[,\s]+$/, '').trim()).filter(x => x.length > 1);
+}
 function zonesToMarkers(by){
   const all = Object.values(by).flat().join('\n');
   const pm = all.match(/pour\s+(\d+)\s*(personnes?|portions?|parts?|pers\b|couverts?)/i);
@@ -1941,6 +1976,7 @@ function zonesToMarkers(by){
     const s = zStrip(l); if (!s || /^pour\s+\d+/i.test(s)) return;
     if (ing.length && (/^\(/.test(s) || /(,|-|\bde|\bd')$/i.test(ing[ing.length - 1]))) ing[ing.length - 1] += ' ' + s; else ing.push(s);
   }));
+  const ingS = ing.flatMap(splitIngredients); ing.length = 0; ing.push(...ingS);
   const mat = [];
   by.materiel.forEach(t => zoneLines(t, ZH.materiel).forEach(l => zStrip(l).split(/\s*[,;]\s*/).filter(Boolean).forEach(x => mat.push(cap(x)))));
   const steps = groupSteps(by.etapes.flatMap(t => zoneLines(t, ZH.etapes)));
