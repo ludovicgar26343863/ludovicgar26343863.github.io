@@ -290,7 +290,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.19';
+const APP_VERSION = '1.20';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1645,7 +1645,7 @@ async function readPhotoLocal(files){
       else status('Préparation de la lecture…', 28);
     } });
     const texts = [];
-    for (; page < imgs.length; page++) { if (cancelled) break; const { data } = await worker.recognize(imgs[page]); texts.push(data.text); }
+    for (; page < imgs.length; page++) { if (cancelled) break; const { data } = await worker.recognize(imgs[page]); texts.push(cleanOcr(data.text)); }
     await worker.terminate(); worker = null;
     if (cancelled || S.screen !== 'editor') return;
     const markers = textToMarkers(texts.join('\n'));
@@ -1852,7 +1852,7 @@ function vZones(){
   const z = S.zones, im = z.imgs[z.cur], n = z.imgs.length;
   const counts = ZT.map(([k, l]) => { const c = z.imgs.reduce((a, x) => a + x.rects.filter(r => r.type === k).length, 0); return c ? `${l} : ${c}` : ''; }).filter(Boolean);
   return `<div class="topbar"><button class="btn ghost" data-act="z-cancel">‹ Annuler</button><h2>Zones de la recette</h2></div>
-  <p class="hint" style="margin-top:0">Choisis ce que tu veux montrer, puis trace un cadre du doigt sur la photo. Tu peux tracer plusieurs cadres par type ; touche ✕ pour en retirer un.</p>
+  <p class="hint" style="margin-top:0">Choisis ce que tu veux montrer, puis trace un cadre du doigt sur la photo. Tu peux tracer plusieurs cadres par type ; un texte sur deux colonnes est séparé automatiquement. Touche ✕ pour retirer un cadre.</p>
   <div class="ztypes" role="radiogroup" aria-label="Type de zone">${ZT.map(([k, l, c]) => `<button role="radio" aria-checked="${z.type === k}" data-act="z-type" data-k="${k}" style="--zc:${c}">${l}</button>`).join('')}</div>
   ${n > 1 ? `<div class="zpager"><button class="iconbtn" data-act="z-prev" ${z.cur === 0 ? 'disabled' : ''} aria-label="Photo précédente">‹</button><span>Photo ${z.cur + 1} sur ${n}</span><button class="iconbtn" data-act="z-next" ${z.cur === n - 1 ? 'disabled' : ''} aria-label="Photo suivante">›</button></div>` : ''}
   <div class="zwrap" id="zwrap" style="aspect-ratio:${im.w} / ${im.h};width:min(100%, calc(64vh * ${(im.w / im.h).toFixed(4)}))"><img src="${im.url}" alt="Photo de la recette" draggable="false"><div class="zlayer" id="zlayer">${zonesHtml(im)}</div></div>
@@ -1883,20 +1883,57 @@ document.addEventListener('pointerup', e => {
   if (r && r.w > 0.03 && r.h > 0.015 && S.zones) { S.zones.imgs[S.zones.cur].rects.push({ type:S.zones.type, ...r }); render(); }
 });
 document.addEventListener('pointercancel', () => { if (zd) { zd.el.remove(); zd = null; } });
-function cropZone(im, r){
+/* Préparation des images pour la lecture : agrandissement, gris, séparation des colonnes */
+function toCanvas(img, sx, sy, sw, sh, k){
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(sw * k)); cv.height = Math.max(1, Math.round(sh * k));
+  const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+  g.filter = 'grayscale(1) contrast(1.3)'; g.imageSmoothingQuality = 'high';
+  g.drawImage(img, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+  return cv;
+}
+function findGutter(cv){
+  const w = cv.width, h = cv.height; if (w < 300 || h < 120) return null;
+  const d = cv.getContext('2d').getImageData(0, 0, w, h).data;
+  let sum = 0, cnt = 0; for (let i = 0; i < d.length; i += 64) { sum += d[i]; cnt++; }
+  const th = (sum / cnt) * 0.72, col = new Uint32Array(w);
+  for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4] < th) col[x]++;
+  const lim = Math.max(1, Math.ceil((h / 2) * 0.004));
+  let best = null, run = 0, start = 0;
+  for (let x = Math.floor(w * 0.2); x < Math.ceil(w * 0.8); x++) {
+    if (col[x] <= lim) { if (!run) start = x; run++; if (!best || run > best.len) best = { start, len:run }; } else run = 0;
+  }
+  return best && best.len >= w * 0.015 ? best.start + Math.floor(best.len / 2) : null;
+}
+function splitCols(cv, depth = 0){
+  const x = depth < 2 ? findGutter(cv) : null; if (x == null) return [cv];
+  const part = (sx, sw) => { const c = document.createElement('canvas'); c.width = sw; c.height = cv.height; c.getContext('2d').drawImage(cv, sx, 0, sw, cv.height, 0, 0, sw, cv.height); return c; };
+  return [...splitCols(part(0, x), depth + 1), ...splitCols(part(x, cv.width - x), depth + 1)];
+}
+const canvasBlob = cv => new Promise(res => cv.toBlob(b => res(b), 'image/png'));
+function cropZone(im, r, cols){
   return new Promise(res => {
     const img = new Image();
-    img.onload = () => {
+    img.onload = async () => {
       const sx = r.x * img.naturalWidth, sy = r.y * img.naturalHeight, sw = r.w * img.naturalWidth, sh = r.h * img.naturalHeight;
-      const k = Math.min(2, 2000 / Math.max(sw, sh)), cv = document.createElement('canvas');
-      cv.width = Math.max(1, Math.round(sw * k)); cv.height = Math.max(1, Math.round(sh * k));
-      const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
-      g.filter = 'grayscale(1) contrast(1.25)'; g.drawImage(img, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
-      cv.toBlob(bl => res(bl), 'image/png');
+      const cv = toCanvas(img, sx, sy, sw, sh, Math.min(2.5, 2400 / Math.max(sw, sh)));
+      const parts = cols ? splitCols(cv) : [cv];
+      res((await Promise.all(parts.map(canvasBlob))).filter(Boolean));
     };
-    img.onerror = () => res(null);
+    img.onerror = () => res([]);
     img.src = im.url;
   });
+}
+/* Corrections des erreurs de lecture les plus fréquentes */
+function cleanOcr(txt){
+  return String(txt || '')
+    .replace(/(\p{L})[-‐‑]\s*\n\s*(\p{Ll})/gu, '$1$2')
+    .replace(/(\p{L})[-‐‑] (\p{Ll})/gu, '$1$2')
+    .replace(/\bI[!|1](?=\s|$)/gm, 'Il')
+    .replace(/(\p{L})[!|](\p{L})/gu, '$1l$2')
+    .replace(/(^|\s)[|](?=\p{Ll})/gmu, '$1l')
+    .replace(/(?<![\d%])\s%(?=\s)/g, ' ¼')
+    .replace(/[ \t]{2,}/g, ' ');
 }
 async function ocrCrops(blobs, status, isCancelled){
   const out = [], smp = await getSample();
@@ -1916,7 +1953,8 @@ async function ocrCrops(blobs, status, isCancelled){
     if (m.status === 'recognizing text') status(`Lecture de la zone ${page + 1} sur ${blobs.length}… ${Math.round(m.progress * 100)} %`, 30 + 70 * ((page + m.progress) / blobs.length));
     else if (/traineddata/.test(m.status)) status('Téléchargement du français…', 5 + 20 * (m.progress || 0));
   } });
-  try { for (; page < blobs.length; page++) { if (isCancelled()) break; const { data } = await worker.recognize(blobs[page]); out.push(data.text); } }
+  try { await worker.setParameters({ tessedit_pageseg_mode:'6', user_defined_dpi:'300', preserve_interword_spaces:'1' }); } catch (x) {}
+  try { for (; page < blobs.length; page++) { if (isCancelled()) break; const { data } = await worker.recognize(blobs[page]); out.push(cleanOcr(data.text)); } }
   finally { try { await worker.terminate(); } catch (x) {} }
   return out;
 }
@@ -1997,11 +2035,13 @@ async function readZones(){
   sheet(`<h3>Lecture des zones</h3><p id="ph-st">Découpage de la photo…</p><div class="progress"><i id="ph-bar" style="width:3%"></i></div><div class="acts"><button class="btn" data-act="ph-cancel">Annuler</button></div>`);
   const status = (msg, pct) => { const st = $('#ph-st'), bar = $('#ph-bar'); if (st) st.textContent = msg; if (bar && pct != null) bar.style.width = Math.max(3, Math.round(pct)) + '%'; };
   try {
-    const blobs = []; for (const j of jobs) blobs.push(await cropZone(j.im, j.r));
+    const blobs = [], owner = [];
+    for (let n = 0; n < jobs.length; n++) { const parts = await cropZone(jobs[n].im, jobs[n].r, jobs[n].r.type !== 'titre'); parts.forEach(b => { blobs.push(b); owner.push(n); }); }
     const texts = await ocrCrops(blobs, status, () => cancelled);
     if (cancelled || !S.zones) return;
     const by = { titre:[], ingredients:[], materiel:[], etapes:[] };
-    jobs.forEach((j, i) => by[j.r.type].push(texts[i] || ''));
+    const per = jobs.map(() => []); texts.forEach((x, i) => per[owner[i]].push(x || ''));
+    jobs.forEach((j, n) => by[j.r.type].push(per[n].join('\n')));
     const markers = zonesToMarkers(by);
     closeSheet(); freeZones(); S.screen = 'editor';
     applyRecipeText(markers, 'photo');
