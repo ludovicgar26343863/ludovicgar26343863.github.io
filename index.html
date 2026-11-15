@@ -328,7 +328,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.31';
+const APP_VERSION = '1.32';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1162,6 +1162,7 @@ function stepCard(e, s, n){
     <div class="withmic"><textarea id="f-smat-${s}" data-f="smat" data-s="${s}" rows="2" placeholder="Vide : l’app repère celui cité dans l’instruction" aria-label="Matériel de l’étape ${s + 1}">${esc((e.materiel || []).join('\n'))}</textarea>${micBtn(`f-smat-${s}`, 'line')}</div>
     <div class="lbl">Notes</div>
     <div style="margin-top:6px">${e.notes.map((x, k) => `<div class="noterow"><textarea data-f="note" data-s="${s}" data-n="${k}" rows="2" aria-label="Note ${k + 1}">${esc(x)}</textarea><button class="iconbtn" data-act="del-note" data-s="${s}" data-n="${k}" aria-label="Supprimer la note">✕</button></div>`).join('')}</div>
+    ${(n => n > 1 ? `<div class="row-btns"><button class="btn mini primary" data-act="split-step" data-s="${s}">Découper en ${n} étapes</button></div>` : '')(groupSteps(String(e.instruction || '').split('\n')).length)}
     <div class="row-btns"><button class="btn mini" data-act="add-note" data-s="${s}">Ajouter une note</button>${SR ? `<button class="btn mini" data-act="dictate" data-s="${s}">Dicter une note</button>` : ''}</div>
     ${e.tempsReels.length ? `<p class="reels">Temps réels : ${e.tempsReels.map(fmtDur).join(', ')}</p>` : ''}
   </div>`;
@@ -1471,6 +1472,7 @@ document.addEventListener('click', async e => {
     case 'up': if (s > 0) { [d.etapes[s - 1], d.etapes[s]] = [d.etapes[s], d.etapes[s - 1]]; render(); } break;
     case 'down': if (s < d.etapes.length - 1) { [d.etapes[s + 1], d.etapes[s]] = [d.etapes[s], d.etapes[s + 1]]; render(); } break;
     case 'add-note': d.etapes[s].notes.push(''); render(); { const ta = document.querySelector(`textarea[data-f="note"][data-s="${s}"][data-n="${d.etapes[s].notes.length - 1}"]`); ta && ta.focus(); } break;
+    case 'split-step': { const base = d.etapes[s], parts = groupSteps(String(base.instruction || '').split('\n')); if (parts.length < 2) break; d.etapes.splice(s, 1, ...parts.map((x, k) => k === 0 ? { ...base, instruction:x, temps:base.temps || guessTime(x) } : { ...blankStep(), instruction:x, temps:guessTime(x) })); render(); toast(`${parts.length} étapes créées`); break; }
     case 'del-note': d.etapes[s].notes.splice(k, 1); render(); break;
     case 'dictate': dictateNote(s); break;
     case 'save': {
@@ -2304,36 +2306,55 @@ function fixFraction(s){
   return f ? `${f} ${rest}` : s;
 }
 const zStrip = l => fixFraction(l.replace(/^[-–—•*·▪●○◦✓☐+»«°]\s*/, '').replace(/^(ingr[ée]dients?|mat[ée]riel|ustensiles?|pr[ée]paration)\s*:\s*/i, '').trim());
+function normNumbers(txt){
+  // ① ❶ ➀ ➊ ⓵ ⑴ ⒈ → (1)
+  return String(txt).replace(/[\u2460-\u2473\u2474-\u2487\u2488-\u249B\u24F5-\u24FE\u2776-\u277F\u2780-\u2789\u278A-\u2793\u24EA\u24FF]/g, ch => {
+    const c = ch.charCodeAt(0); let n = null;
+    if (c >= 0x2460 && c <= 0x2473) n = c - 0x2460 + 1;
+    else if (c >= 0x2474 && c <= 0x2487) n = c - 0x2474 + 1;
+    else if (c >= 0x2488 && c <= 0x249B) n = c - 0x2488 + 1;
+    else if (c >= 0x24F5 && c <= 0x24FE) n = c - 0x24F5 + 1;
+    else if (c >= 0x2776 && c <= 0x277F) n = c - 0x2776 + 1;
+    else if (c >= 0x2780 && c <= 0x2789) n = c - 0x2780 + 1;
+    else if (c >= 0x278A && c <= 0x2793) n = c - 0x278A + 1;
+    return n ? ` (${n}) ` : ' ';
+  });
+}
 function groupSteps(lines){
   const BUL = '-–—•*·▪●○◦✓☐>+»→';
   const bulStart = new RegExp(`^\\s*[${BUL}]\\s*`);
   const sStrip = l => String(l).replace(bulStart, '').trim();
-  let txt = lines.map(l => String(l).trim()).filter(Boolean).join('\n');
-  if (!txt) return [];
+  let txt = normNumbers(lines.map(l => String(l).trim()).filter(Boolean).join('\n')).replace(/[ \t]+/g, ' ');
+  if (!txt.trim()) return [];
   const MARK = '\u0001';
-  // 1. puces en début de ligne, ou puces rondes au milieu d'une ligne
+  const clean = seg => seg.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  // 1. numérotation croissante : 1. 2) (3) [4] 5° Étape 6 : ①… même au milieu d'une ligne
+  const found = []; let m;
+  const re = /(^|[\s.!:;)\]])(?:([ée]tape)\s*(\d{1,2})\s*[.):–-]?|[(\[]\s*(\d{1,2})\s*[)\].]|(\d{1,2})\s*[.)°](?!\d))(?=\s*[A-ZÀ-Ýa-zà-ÿ(«"])/gi;
+  while ((m = re.exec(txt))) { const at = m.index + m[1].length; found.push({ at, n:+(m[3] || m[4] || m[5]), ls:at === 0 || txt[at - 1] === '\n' }); }
+  const reLine = /(^|\n)\s*(\d{1,2})\s+(?=[A-ZÀ-Ý])/g;
+  while ((m = reLine.exec(txt))) { const at = m.index + m[1].length; if (!found.some(f => Math.abs(f.at - at) < 3)) found.push({ at, n:+m[2], ls:true }); }
+  found.sort((a, b) => a.at - b.at);
+  let seq = [];
+  for (let s = 0; s < found.length; s++) {
+    if (found[s].n > 3 && !found[s].ls) continue;
+    const cand = [found[s]]; let exp = found[s].n + 1;
+    for (let k = s + 1; k < found.length; k++) if (found[k].n === exp) { cand.push(found[k]); exp++; }
+    if (cand.length > seq.length) seq = cand;
+  }
+  if (seq.length >= 2) {
+    for (let k = seq.length - 1; k >= 0; k--) txt = txt.slice(0, seq[k].at) + MARK + txt.slice(seq[k].at);
+    return txt.split(MARK).map((seg, i) => clean(i === 0 ? seg : seg.replace(/^\s*(?:[ée]tape\s*\d{1,2}\s*[.):–-]?|[(\[]\s*\d{1,2}\s*[)\].]|\d{1,2}\s*[.)°]?)\s*/i, ''))).map(s => s.replace(bulStart, '').trim()).filter(x => x.length > 1);
+  }
+  // 2. puces en début de ligne, ou puces rondes au milieu d'une ligne
   let hasMarks = false;
   txt = txt.split('\n').map(l => { if (bulStart.test(l)) { hasMarks = true; return MARK + l.replace(bulStart, ''); } return l; }).join('\n');
   txt = txt.replace(/\s+[•·▪●○◦✓☐]\s+/g, () => { hasMarks = true; return '\n' + MARK; });
-  // 2. numérotation croissante 1, 2, 3… (« 1. », « 2) », « Étape 3 : »), même au milieu d'une ligne
-  const re = /(^|[\s.!:;)\u0001])(?:([ée]tape)\s*(\d{1,2})\s*[.):–-]?|(\d{1,2})\s*[.)](?!\d))(?=\s*[A-ZÀ-Ýa-zà-ÿ(«"])/gi;
-  const found = []; let m;
-  while ((m = re.exec(txt))) found.push({ at:m.index + m[1].length, n:+(m[3] || m[4]) });
-  let seq = [];
-  for (let s = 0; s < found.length && seq.length < 2; s++) {
-    if (found[s].n > 3) continue;
-    const cand = [found[s]]; let exp = found[s].n + 1;
-    for (let k = s + 1; k < found.length; k++) if (found[k].n === exp) { cand.push(found[k]); exp++; }
-    if (cand.length >= 2) seq = cand;
-  }
-  if (seq.length >= 2) { for (let k = seq.length - 1; k >= 0; k--) txt = txt.slice(0, seq[k].at) + MARK + txt.slice(seq[k].at); hasMarks = true; }
-  if (hasMarks) {
-    return txt.split(MARK).map(seg => seg.replace(/\n+/g, ' ').replace(/^\s*(?:[ée]tape\s*)?\d{1,2}\s*[.):–-]?\s*/i, '').replace(bulStart, '').replace(/\s+/g, ' ').trim()).filter(x => x.length > 1);
-  }
+  if (hasMarks) return txt.split(MARK).map(clean).filter(x => x.length > 1);
   // 3. sinon : une étape par phrase terminée par un point
   const steps = []; let cur = '';
   const push = () => { const t = cur.trim(); if (t) steps.push(t); cur = ''; };
-  lines.forEach(l => { cur += (cur ? ' ' : '') + sStrip(l); if (/[.!]$/.test(String(l).trim())) push(); });
+  txt.split('\n').forEach(l => { cur += (cur ? ' ' : '') + sStrip(l); if (/[.!]$/.test(String(l).trim())) push(); });
   push(); return steps;
 }
 /* Découpe une ligne lue en plusieurs ingrédients */
@@ -2373,8 +2394,10 @@ function splitIngredients(line){
 }
 function zonesToMarkers(by){
   const all = Object.values(by).flat().join('\n');
-  const pm = all.match(/pour\s+(\d+)\s*(personnes?|portions?|parts?|pers\b|couverts?)/i);
-  const title = by.titre.map(t => zoneLines(t).join(' ')).join(' ').replace(/\s+/g, ' ').trim();
+  const PORT = /^\s*(?:pour\s+)?(\d+)\s*(personnes?|portions?|parts?|pi[eè]ces?|pers\b|couverts?|nems|g[aâ]teaux|gyozas?|biscuits?|cr[eê]pes)\b/i;
+  let pm = all.match(/pour\s+(\d+)\s*(personnes?|portions?|parts?|pi[eè]ces?|pers\b|couverts?)/i);
+  const tLines = by.titre.flatMap(t => zoneLines(t)).filter(l => { const q = l.match(PORT); if (q) { pm = pm || q; return false; } return true; });
+  const title = tLines.join(' ').replace(/\s+/g, ' ').trim();
   const ing = [];
   by.ingredients.forEach(t => zoneLines(t, ZH.ingredients).forEach(l => {
     const s = zStrip(l); if (!s || /^pour\s+\d+/i.test(s) || (/:\s*$/.test(s) && !/\d/.test(s))) return;
