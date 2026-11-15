@@ -328,7 +328,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.29';
+const APP_VERSION = '1.30';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1861,9 +1861,9 @@ function vPrices(){
   const missing = ingNames().filter(n => { const p = findPrice(n); return !p || p.perBase == null; });
   const ps = [...S.prices].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
   return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Ingrédients et prix</h2></div>
-  <div class="row-btns"><label class="btn primary" style="flex:1">${CAM} Photographier le ticket<input type="file" accept="image/*" capture="environment" data-file="ticket" class="vh"></label><label class="btn" style="flex:1">Choisir des images<input type="file" accept="image/*" multiple data-file="ticket" class="vh"></label></div>
+  <div class="row-btns"><label class="btn primary" style="flex:1">${CAM} Photographier le ticket<input type="file" accept="image/*" capture="environment" data-file="ticket" class="vh"></label><label class="btn" style="flex:1">Images ou PDF<input type="file" accept="image/*,application/pdf,.pdf" multiple data-file="ticket" class="vh"></label></div>
   <div class="row-btns"><button class="btn" data-act="price-new" style="flex:1">Ajouter un ingrédient</button></div>
-  <p class="hint">Photographie le ticket à plat et bien éclairé, en une ou plusieurs photos s’il est long. Les prix lus mettent à jour les ingrédients et le coût des plats.</p>
+  <p class="hint">Photographie le ticket à plat et bien éclairé, en une ou plusieurs photos s’il est long, ou choisis le PDF d’un ticket reçu par mail ou téléchargé depuis un drive. Les prix lus mettent à jour les ingrédients et le coût des plats.</p>
   ${missing.length ? `<h3 class="sub">Sans prix (${missing.length})</h3>${missing.map(n => `<div class="mrow warn"><b>${esc(n)}</b><div class="mbtns"><button class="btn mini" data-act="price-new" data-name="${esc(n)}">Ajouter un prix</button></div></div>`).join('')}` : ''}
   <h3 class="sub">Ingrédients enregistrés${ps.length ? ` (${ps.length})` : ''}</h3>
   ${ps.length ? ps.map(p => `<div class="mrow"><b>${esc(p.name)}</b><small>Ticket : ${p.libelle ? esc(p.libelle) : 'libellé non renseigné'}</small><small>${p.perBase == null ? 'Pas encore de prix' : `Conditionnement : ${pricePack(p)}, soit ${priceLabel(p)}`}</small>${p.perBase == null ? '' : `<small>${p.source === 'ticket' ? 'Ticket du' : 'Saisi le'} ${fmtDateFr(p.date)}</small>`}<div class="mbtns"><button class="btn mini" data-act="price-edit" data-name="${esc(p.name)}">Modifier</button><button class="btn mini danger" data-act="price-del" data-name="${esc(p.name)}">Supprimer</button></div></div>`).join('') : `<div class="empty"><p>Aucun ingrédient enregistré. Scanne un ticket ou ajoute un ingrédient à la main.</p></div>`}`;
@@ -2037,6 +2037,50 @@ const ticketInput = document.createElement('input');
 ticketInput.type = 'file'; ticketInput.accept = 'image/*'; ticketInput.multiple = true; ticketInput.hidden = true;
 document.body.appendChild(ticketInput);
 ticketInput.addEventListener('change', () => { const files = [...ticketInput.files].slice(0, 4); ticketInput.value = ''; if (files.length) readTicket(files); });
+/* PDF de tickets : texte lu directement, pages scannées converties en images */
+let pdfP = null;
+function loadPdfJs(){
+  if (!pdfP) pdfP = new Promise((res, rej) => {
+    if (window.pdfjsLib) return res(window.pdfjsLib);
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => { const L = window.pdfjsLib; if (!L) { pdfP = null; return rej(new Error('pdf')); } L.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; res(L); };
+    s.onerror = () => { pdfP = null; rej(new Error('pdf')); };
+    document.head.appendChild(s);
+  });
+  return pdfP;
+}
+const isPdf = f => !!f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
+async function readPdf(file){
+  const L = await loadPdfJs();
+  const doc = await L.getDocument({ data:new Uint8Array(await file.arrayBuffer()) }).promise;
+  const lines = [], images = [];
+  for (let p = 1; p <= Math.min(doc.numPages, 12); p++) {
+    const page = await doc.getPage(p), tc = await page.getTextContent(), rows = [];
+    tc.items.forEach(it => {
+      if (!it.str || !it.str.trim()) return;
+      const x = it.transform[4], y = it.transform[5];
+      let row = rows.find(r => Math.abs(r.y - y) < 3); if (!row) { row = { y, items:[] }; rows.push(row); }
+      row.items.push({ x, s:it.str, w:it.width || 0 });
+    });
+    rows.sort((a, b) => b.y - a.y).forEach(r => {
+      r.items.sort((a, b) => a.x - b.x);
+      let line = '', end = null;
+      r.items.forEach(i => { if (end != null) line += i.x - end > 8 ? '   ' : i.x - end > 1 ? ' ' : ''; line += i.s; end = i.x + i.w; });
+      lines.push(line.trim());
+    });
+    if (rows.length < 3) {
+      const vp = page.getViewport({ scale:2.5 }), cv = document.createElement('canvas');
+      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+      await page.render({ canvasContext:g, viewport:vp }).promise;
+      const b = await canvasBlob(cv); if (b) images.push(b);
+    }
+  }
+  return { text:lines.join('\n'), images };
+}
+const ticketArticles = obj => (obj.articles || []).map(x => ({ libelle:String(x.libelle || x.nom || '').trim(), nom:cap(String(x.nom || x.libelle || '').trim()), prix:+x.prix || 0, qte:+x.quantite || 1, unite:UNIT_OPTS.includes(x.unite) ? x.unite : 'pièce', detected:!!x.contenance_lue })).filter(x => x.libelle);
+const jsonObj = text => { const raw = String(text), a = raw.indexOf('{'), z = raw.lastIndexOf('}'); return a >= 0 ? JSON.parse(raw.slice(a, z + 1)) : {}; };
 async function readTicket(files){
   let cancelled = false, ctl = null;
   S.phCtl = { abort(){ cancelled = true; if (ctl) ctl.abort(); } };
@@ -2044,20 +2088,36 @@ async function readTicket(files){
   const status = (msg, pct) => { const st = $('#ph-st'), bar = $('#ph-bar'); if (st) st.textContent = msg; if (bar && pct != null) bar.style.width = Math.max(3, Math.round(pct)) + '%'; };
   try {
     let items = [], date = '';
-    let aiDone = false;
-    if (await aiReady()) try {
-      ctl = new AbortController(); status(`${aiName()} lit le ticket…`, 40);
-      const { text } = await aiCall(TICKET_PROMPT, files, { signal:ctl.signal, timeout:60000 });
-      const raw = String(text), a = raw.indexOf('{'), z = raw.lastIndexOf('}');
-      const obj = a >= 0 ? JSON.parse(raw.slice(a, z + 1)) : {};
-      date = obj.date || '';
-      items = (obj.articles || []).map(x => ({ libelle:String(x.libelle || x.nom || '').trim(), nom:cap(String(x.nom || x.libelle || '').trim()), prix:+x.prix || 0, qte:+x.quantite || 1, unite:UNIT_OPTS.includes(x.unite) ? x.unite : 'pièce', detected:!!x.contenance_lue })).filter(x => x.libelle);
-      aiDone = true;
-    } catch (e) { if (cancelled) return; status('Lecture intelligente indisponible : lecture sur le téléphone…', 8); }
-    if (!aiDone) {
-      const txt = await ocrRun(files, status, () => cancelled);
+    // 1. PDF : texte lu tel quel ; pages sans texte (scans) traitées comme des photos
+    let imgs = files.filter(f => !isPdf(f)), pdfText = '';
+    for (const f of files.filter(isPdf)) {
+      status('Ouverture du PDF…', 8);
+      try { const r = await readPdf(f); pdfText += (pdfText ? '\n' : '') + r.text; imgs.push(...r.images); }
+      catch (e) { throw { code:'pdf' }; }
       if (cancelled) return;
-      ({ items, date } = parseReceipt(txt));
+    }
+    if (pdfText.replace(/\s/g, '').length > 20 && /\d[.,]\d{2}/.test(pdfText)) {
+      let done = false;
+      if (await aiReady()) try {
+        ctl = new AbortController(); status(`${aiName()} lit le ticket…`, 40);
+        const { text } = await aiCall(TICKET_PROMPT.replace("Tu lis la photo d'un ticket de caisse", "Tu lis le texte d'un ticket de caisse (extrait d'un PDF)") + '\n\nTexte du ticket :\n' + pdfText, [], { signal:ctl.signal, timeout:60000 });
+        const obj = jsonObj(text); date = obj.date || date; items.push(...ticketArticles(obj)); done = true;
+      } catch (e) { if (cancelled) return; }
+      if (!done) { const r = parseReceipt(pdfText); items.push(...r.items); date = date || r.date; }
+    }
+    // 2. Photos (et pages scannées)
+    if (imgs.length) {
+      let aiDone = false;
+      if (await aiReady()) try {
+        ctl = new AbortController(); status(`${aiName()} lit le ticket…`, 40);
+        const { text } = await aiCall(TICKET_PROMPT, imgs, { signal:ctl.signal, timeout:60000 });
+        const obj = jsonObj(text); date = date || obj.date || ''; items.push(...ticketArticles(obj)); aiDone = true;
+      } catch (e) { if (cancelled) return; status('Lecture intelligente indisponible : lecture sur le téléphone…', 8); }
+      if (!aiDone) {
+        const txt = await ocrRun(imgs, status, () => cancelled);
+        if (cancelled) return;
+        const r = parseReceipt(txt); items.push(...r.items); date = date || r.date;
+      }
     }
     if (cancelled) return;
     if (!items.length) throw { code:'empty' };
@@ -2067,7 +2127,7 @@ async function readTicket(files){
     closeSheet(); S.screen = 'ticket'; render(); window.scrollTo(0, 0);
   } catch (e) {
     if (cancelled) return;
-    status(e && e.code === 'empty' ? 'Aucun article lu sur ce ticket. Reprends la photo à plat, bien éclairée et sans pli.' : e && e.message === 'load' ? 'Impossible de charger le module de lecture : vérifie ta connexion internet.' : 'La lecture du ticket a échoué. Réessaie avec une photo plus nette.', 0);
+    status(e && e.code === 'pdf' ? 'Ce PDF n’a pas pu être ouvert (connexion internet nécessaire la première fois, ou fichier protégé).' : e && e.code === 'empty' ? 'Aucun article lu sur ce ticket. Reprends la photo à plat, bien éclairée et sans pli.' : e && e.message === 'load' ? 'Impossible de charger le module de lecture : vérifie ta connexion internet.' : 'La lecture du ticket a échoué. Réessaie avec une photo plus nette.', 0);
     const btn = $('#sheet [data-act="ph-cancel"]'); if (btn) btn.textContent = 'Fermer';
   }
 }
