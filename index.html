@@ -320,7 +320,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.27';
+const APP_VERSION = '1.28';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1141,7 +1141,8 @@ function vEditor(){
   const d = S.draft, isNew = !d.id || !find(d.id);
   const head = `<div class="topbar"><button class="btn ghost" data-act="cancel-edit">‹ Annuler</button><h2>${isNew ? 'Créer une recette' : 'Modifier la recette'}</h2></div>
   <div class="tabs" role="group" aria-label="Mode d’édition"><button data-act="tab" data-tab="form" aria-pressed="${S.tab === 'form'}">Formulaire</button><button data-act="tab" data-tab="text" aria-pressed="${S.tab === 'text'}">Texte à marqueurs</button></div>
-  <div class="row-btns" style="margin-top:14px"><label class="btn" style="flex:1">${CAM} Depuis une photo<input type="file" accept="image/*" multiple data-file="photo" class="vh"></label><button class="btn" data-act="paste" style="flex:1">Coller un texte</button></div>
+  ${hasContent(d) ? '<p class="hint" style="margin-bottom:0">Une nouvelle photo ou un texte collé complète la recette sans effacer ce qui y est déjà.</p>' : ''}
+  <div class="row-btns" style="margin-top:14px"><label class="btn" style="flex:1">${CAM} ${hasContent(d) ? 'Ajouter une photo' : 'Depuis une photo'}<input type="file" accept="image/*" multiple data-file="photo" class="vh"></label><button class="btn" data-act="paste" style="flex:1">Coller un texte</button></div>
   ${S.editErr ? `<div class="error" role="alert">${esc(S.editErr)}</div>` : ''}`;
   const bar = `<div class="savebar"><button class="btn primary" data-act="save">Enregistrer la recette</button></div>`;
   if (S.tab === 'text') return head + `<p class="hint">Un marqueur en début de ligne : Recette, Description, Portions, Ingrédient, Matériel, Étape, Temps, Note. « Temps réel » et « Écart matériel » sont remplis par l’application.</p><textarea id="rawtext" class="raw" spellcheck="false" aria-label="Texte de la recette">${esc(serialize(d))}</textarea>` + bar;
@@ -1678,19 +1679,39 @@ function textToMarkers(raw){
   steps.forEach(st => { out.push('', `Étape : ${st}`); const d = guessTime(st); if (d) out.push(`Temps : ${fmtDur(d)}`); });
   return out.join('\n');
 }
+/* Plusieurs photos pour une même recette : chaque lecture complète la recette au lieu de la remplacer */
+const filled = a => (a || []).map(x => String(x || '').trim()).filter(Boolean);
+function hasContent(d){ return !!(d && ((d.titre || '').trim() || filled(d.ingredients).length || filled(d.materiel).length || (d.etapes || []).some(e => (e.instruction || '').trim()))); }
+function mergeRecipe(old, add){
+  old = old || {};
+  const uniq = (a, b) => { const seen = new Set(a.map(norm)); return [...a, ...b.filter(x => { const k = norm(x); if (seen.has(k)) return false; seen.add(k); return true; })]; };
+  const oldSteps = (old.etapes || []).filter(e => (e.instruction || '').trim());
+  const seenSteps = new Set(oldSteps.map(e => norm(e.instruction)));
+  const keepTitle = (old.titre || '').trim() && !/^recette sans titre$/i.test(old.titre.trim());
+  const out = {
+    ...add,
+    id:old.id || null, ecarts:old.ecarts || [],
+    titre:keepTitle ? old.titre : (add.titre && !/^recette sans titre$/i.test(add.titre) ? add.titre : (old.titre || add.titre || '')),
+    description:(old.description || '').trim() ? old.description : (add.description || ''),
+    portions:old.portions || add.portions || null,
+    ingredients:uniq(filled(old.ingredients), filled(add.ingredients)),
+    materiel:uniq(filled(old.materiel), filled(add.materiel)),
+    etapes:[...oldSteps, ...(add.etapes || []).filter(e => (e.instruction || '').trim() && !seenSteps.has(norm(e.instruction)))],
+    photos:[...(old.photos || []), ...(add.photos || [])]
+  };
+  if (!out.ingredients.length && !out.etapes.some(e => e.ingredients.length)) out.ingredients.push('');
+  if (!out.materiel.length) out.materiel.push('');
+  if (!out.etapes.length) out.etapes.push(blankStep());
+  return out;
+}
 function applyRecipeText(markers, src, files){
   let recipe;
   try { recipe = parse(markers, { lenient:true }).recipe; } catch (e) { toast(e.message); return false; }
   if (!recipe.etapes.length && !recipe.ingredients.length) { toast(src === 'photo' ? 'Aucun texte de recette reconnu sur la photo.' : 'Aucune recette reconnue dans ce texte.'); return false; }
-  const old = S.draft || {};
-  recipe.id = old.id || null; recipe.ecarts = old.ecarts || [];
-  if (!recipe.ingredients.length && !recipe.etapes.some(e => e.ingredients.length)) recipe.ingredients.push('');
-  if (!recipe.materiel.length) recipe.materiel.push('');
-  if (!recipe.etapes.length) recipe.etapes.push(blankStep());
-  recipe.photos = [...(old.photos || []), ...(recipe.photos || [])];
-  S.draft = recipe; S.tab = 'form';
+  const added = hasContent(S.draft);
+  S.draft = mergeRecipe(S.draft, recipe); S.tab = 'form';
   if (files && files.length) attachPhotos(files);
-  S.editErr = src === 'photo' ? 'Recette lue depuis la photo : la lecture automatique peut se tromper, vérifie chaque champ avant d’enregistrer.' : 'Recette analysée : vérifie les ingrédients, les étapes et les temps avant d’enregistrer.';
+  S.editErr = (added ? 'Contenu ajouté à la recette, à la suite de ce qui y était déjà. ' : '') + (src === 'photo' ? 'La lecture automatique peut se tromper : vérifie chaque champ avant d’enregistrer.' : 'Vérifie les ingrédients, les étapes et les temps avant d’enregistrer.');
   render(); window.scrollTo(0, 0);
   return true;
 }
@@ -1779,13 +1800,9 @@ async function readPhotoClaude(files){
     if (/^AUCUNE RECETTE/i.test(raw)) throw { code:'empty' };
     const { recipe } = parse(raw, { lenient:true });
     if (!recipe.titre && !recipe.etapes.length) throw { code:'empty' };
-    const old = S.draft || {};
-    recipe.id = old.id || null; recipe.ecarts = old.ecarts || [];
-    if (!recipe.ingredients.length && !recipe.etapes.some(e => e.ingredients.length)) recipe.ingredients.push('');
-    if (!recipe.etapes.length) recipe.etapes.push(blankStep());
-    recipe.photos = [...(old.photos || []), ...(recipe.photos || [])];
-    S.draft = recipe; S.tab = 'form'; attachPhotos(files);
-    S.editErr = 'Recette lue depuis la photo : vérifie les quantités, les temps et les étapes avant d’enregistrer.';
+    const added = hasContent(S.draft);
+    S.draft = mergeRecipe(S.draft, recipe); S.tab = 'form'; attachPhotos(files);
+    S.editErr = (added ? 'Contenu ajouté à la recette, à la suite de ce qui y était déjà. ' : '') + 'Vérifie les quantités, les temps et les étapes avant d’enregistrer.';
     closeSheet(); render(); window.scrollTo(0, 0);
   } catch (e) {
     if (ctl.signal.aborted) return;
