@@ -310,6 +310,8 @@ label.btn{cursor:pointer;position:relative}
 .tkpick.on{border-color:var(--herb);background:var(--saffron-soft)}
 .icost{font-size:15px;color:var(--muted);white-space:nowrap}
 
+.iq{color:var(--herb);font-weight:800}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -328,7 +330,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.32';
+const APP_VERSION = '1.33';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -501,8 +503,8 @@ const stem = w => w.replace(/(s|x)$/, '');
 const words = t => norm(t).replace(/[^a-z0-9œæ' ]/g, ' ').split(/[\s']+/).filter(Boolean);
 function stepIngr(r, st){
   if (st.ingredients.length) return st.ingredients;
-  const inStep = new Set(words(st.instruction).map(stem));
-  return r.ingredients.filter(x => words(shopItem(x, 1).name).filter(w => w.length >= 3 && !STOP.has(w)).some(w => inStep.has(stem(w))));
+  const inStep = keyWords(st.instruction);
+  return r.ingredients.filter(x => specKw(shopItem(x, 1).name).some(k => inStep.some(w => wmatch(w, k))));
 }
 const allIngr = r => { const seen = new Set(), out = []; [...r.ingredients, ...r.etapes.flatMap(e => e.ingredients)].forEach(x => { const t = (x || '').trim(); if (t && !seen.has(norm(t))) { seen.add(norm(t)); out.push(t); } }); return out; };
 function stepMat(r, st){
@@ -810,7 +812,7 @@ function goStep(i, auto){
   c.t = tt ? { base:tt, total:tt, remaining:tt, endAt:0, running:false, done:false } : null;
   c.stepStart = Date.now(); c.workStart = null;
   render(); window.scrollTo(0, 0);
-  let text = `Étape ${i + 1}. ${st.instruction}`;
+  let text = `Étape ${i + 1}. ${stepRender(st, c.r, c.f, i, false)}`;
   if (S.settings.lireNotes && st.notes.length) text += `. Note : ${st.notes.join('. ')}`;
   say(text);
   if (auto && S.settings.autoMinuteur) tStart(true);
@@ -888,7 +890,7 @@ async function quitCook(){
 function repeatStep(){
   const c = S.cook;
   if (c.i < 0) return say(`${c.r.titre}, ${plural(c.portions, 'portion')}. Ingrédients : ${allIngr(c.r).map(x => scaleIngr(x, c.f)).join(', ')}.`, true);
-  say(`Étape ${c.i + 1}. ${c.r.etapes[c.i].instruction}`, true);
+  say(`Étape ${c.i + 1}. ${stepRender(c.r.etapes[c.i], c.r, c.f, c.i, false)}`, true);
 }
 function sayRemaining(){
   const t = S.cook.t;
@@ -1083,6 +1085,76 @@ function updUnitPrice(){
   el.textContent = prix >= 0 ? `Soit ${priceLabel(makePrice('x', prix, q, u))}.` : '';
 }
 
+/* ---------- Liens ingrédients ↔ étapes : quantités dans le texte des étapes ---------- */
+const GENERIC = new Set(['blanc', 'jaune', 'feuille', 'morceau', 'tranche', 'filet', 'grain', 'zeste', 'fine', 'entier', 'gro', 'frai', 'chaud', 'froid']);
+const specKw = name => { const k = keyWords(name); const s = k.filter(w => !GENERIC.has(w)); return s.length ? s : k; };
+const TIMEW = /^(heures?|h|minutes?|min|mn|secondes?|sec|s|fois|jours?|nuits?|cm|mm|degr[ée]s?|personnes?|portions?|parts?|ans?)$/i;
+const STEP_UNITS = 'kg|g|mg|l|cl|ml|dl|cs|cc|c\\.?\\s*(?:à|a)\\s*[sc]\\.?|cuill?[eè]res?(?:\\s+(?:à|a)\\s+(?:soupe|caf[eé]))?|pinc[ée]es?|sachets?|gousses?|tranches?|verres?|tasses?|bottes?|bo[iî]tes?|feuilles?|brins?|pots?|branches?';
+const STOPCUT = /^(et|avec|dans|pour|puis|ou|en|au|aux|sur|à|a|le|la|les|du|un|une|que|qui|jusqu)$/i;
+function recipeQtyMap(r){
+  const out = [];
+  const add = (line, name, src) => { const kw = specKw(name); if (!kw.length || out.some(e => e.kw.some(k => kw.includes(k)))) return; out.push({ line, name, kw, src }); };
+  (r.ingredients || []).forEach(x => { if (splitQty(x)) add(x, shopItem(x, 1).name, -1); });
+  (r.etapes || []).forEach((st, si) => {
+    const txt = String(st.instruction || ''), re = new RegExp(`(\\d+(?:[.,]\\d+)?|[½¼¾⅓⅔])\\s*(${STEP_UNITS})?(?![a-zà-ÿ0-9])\\s*(?:de\\s+|d['’]\\s*)?([a-zà-ÿœ'’]+(?:\\s+(?:de\\s+|d['’]\\s*)?[a-zà-ÿœ]+){0,3})`, 'gi');
+    let m;
+    while ((m = re.exec(txt))) {
+      const cut = []; for (const w of m[3].split(/\s+/)) { if (STOPCUT.test(w)) break; cut.push(w); }
+      const name = cut.join(' ').replace(/^(de\s+|d['’]\s*)/i, '').trim();
+      if (!name || TIMEW.test(cut[0] || '')) continue;
+      add(`${m[1]}${m[2] ? ' ' + m[2] : ''} de ${name}`, name, si);
+    }
+  });
+  return out;
+}
+function fmtUQ(n, unit){
+  const u = String(unit).toLowerCase();
+  if (u === 'kg' && n < 1) return `${Math.round(n * 1000)} g`;
+  if (u === 'l' && n < 1) return `${Math.round(n * 100)} cl`;
+  if (u === 'g' && n >= 1000) return `${fmtQty(n / 1000)} kg`;
+  if (u === 'ml' && n >= 1000) return `${fmtQty(n / 1000)} l`;
+  return `${fmtQty(n)} ${unit}`;
+}
+function stepRender(st, r, f, si, asHtml){
+  const txt = String(st.instruction || ''); if (!txt) return '';
+  const entries = recipeQtyMap(r), allKw = entries.flatMap(e => e.kw), ops = [];
+  const numRe = new RegExp(`(\\d+(?:[.,]\\d+)?|[½¼¾⅓⅔])(\\s*)(${STEP_UNITS})?(?![a-zà-ÿ0-9])`, 'gi');
+  let m;
+  while ((m = numRe.exec(txt))) {
+    const at = m.index, end = at + m[0].length, before = txt.slice(Math.max(0, at - 16), at), after = txt.slice(end), unit = m[3];
+    if (/[\d\/]$/.test(before)) continue;
+    if (!unit) { const w = (after.match(/^\s*(?:de\s+|d['’]\s*)?([a-zà-ÿœ]+)/i) || [])[1]; if (!w || TIMEW.test(w) || !keyWords(w).some(k => allKw.some(a => wmatch(a, k)))) continue; }
+    if (/(?:chaque|par|prendre|prends|déposer|dépose|y)\s*$/i.test(before)) continue;
+    const n = FRAC[m[1]] || parseFloat(m[1].replace(',', '.')); if (!(n > 0)) continue;
+    const s = f === 1 ? `${m[1]}${m[2]}${unit || ''}` : unit ? fmtUQ(n * f, unit) : `${fmtQty(n * f)}${m[2]}`;
+    ops.push({ at, end, html:`<b class="iq">${esc(s)}</b>`, plain:s });
+  }
+  const wre = /[a-zà-ÿœ'’]+/gi, ws = [];
+  while ((m = wre.exec(txt))) ws.push({ w:m[0], at:m.index, end:m.index + m[0].length });
+  entries.forEach(e => {
+    if (e.src === si) return;
+    for (let k = 0; k < ws.length; k++) {
+      if (!keyWords(ws[k].w).some(x => e.kw.some(y => wmatch(x, y)))) continue;
+      if (/\d/.test(txt.slice(Math.max(0, ws[k].at - 25), ws[k].at))) return;
+      if (k > 0 && keyWords(ws[k - 1].w).some(x => GENERIC.has(x))) continue;
+      if (ops.some(o => ws[k].at < o.end && ws[k].end > o.at)) return;
+      const nameKw = keyWords(e.name); let last = k;
+      for (let q = k + 1; q < ws.length && q <= k + 3; q++) { if (/^(de|d['’]?)$/i.test(ws[q].w)) continue; if (keyWords(ws[q].w).some(x => nameKw.some(y => wmatch(x, y)))) last = q; else break; }
+      const p = splitQty(e.line); if (!p) return;
+      const lab = p.unit ? fmtUQ(p.q * f, p.unit) : `${fmtQty(p.q * f)} ${p.rest.split(/\s+/)[0]}`;
+      ops.push({ at:ws[last].end, end:ws[last].end, html:` <span class="iq">(${esc(lab)})</span>`, plain:` (${lab})` });
+      return;
+    }
+  });
+  ops.sort((a, b) => a.at - b.at || a.end - b.end);
+  let out = '', pos = 0;
+  for (const o of ops) { if (o.at < pos) continue; out += asHtml ? esc(txt.slice(pos, o.at)) : txt.slice(pos, o.at); out += asHtml ? o.html : o.plain; pos = o.end; }
+  return out + (asHtml ? esc(txt.slice(pos)) : txt.slice(pos));
+}
+/* Taille des données enregistrées */
+function storageBytes(){ let n = 0; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('pasapas:')) n += (k.length + (localStorage.getItem(k) || '').length) * 2; } } catch (e) {} return n; }
+const fmtSize = b => b >= 1048576 ? `${(b / 1048576).toFixed(1).replace('.', ',')} Mo` : `${Math.max(1, Math.round(b / 1024))} Ko`;
+
 /* ---------- Écrans ---------- */
 function vHome(){
   const n = S.recipes.length;
@@ -1118,6 +1190,7 @@ function vSettings(){
   <label class="lbl">Clé Gemini<input id="gem-key" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…" value="${esc(geminiKey())}"></label>
   <div class="row-btns"><button class="btn primary" data-act="gem-save" style="flex:1">Enregistrer la clé</button><button class="btn" data-act="gem-test" style="flex:1" ${geminiKey() ? '' : 'disabled'}>Tester</button>${geminiKey() ? '<button class="btn danger" data-act="gem-del">Retirer</button>' : ''}</div>
   <p class="hint">La clé reste sur ce téléphone et n’est envoyée qu’à Google. En version gratuite, Google peut utiliser les images envoyées pour améliorer ses services : n’y mets pas de document personnel.</p>
+  ${(b => { const pct = Math.min(100, b / (5 * 1048576) * 100); return `<h3 class="sub">Stockage</h3><div class="totals"><span>Recettes, prix et réglages</span><b>${fmtSize(b)}</b></div><div class="progress" style="margin:10px 0 6px"><i style="width:${Math.max(1, pct)}%"></i></div><p class="hint" style="margin-top:0">${pct < 40 ? `Environ ${Math.round(pct)} % de la place disponible (5 Mo) : il reste largement de quoi faire. Les photos sont rangées à part, sans cette limite.` : `Déjà ${Math.round(pct)} % de la place disponible (5 Mo) : il est temps de passer à une base de données sur le téléphone.`}</p>`; })(storageBytes())}
   <h3 class="sub">Micro et voix</h3>
   <p class="hint" style="margin-top:0">Si la commande vocale ne marche pas, lance ce test : il vérifie chaque maillon (autorisation, micro, reconnaissance) et indique celui qui bloque.</p>
   <div class="stack"><button class="btn" data-act="mic-test">Tester le micro</button></div>
@@ -1222,7 +1295,7 @@ function vCook(){
     : `<div class="timer"><div><p class="tlabel">Pas de temps prévu pour cette étape</p><div class="ctl">${c.workStart ? `<span class="chrono">Chrono <b id="chr">${fmtClock((Date.now() - c.workStart) / 1000)}</b></span>` : `<button class="btn mini primary" data-act="t-start">Démarrer</button>`}<button class="btn mini" data-act="t-add">Minuteur d’1 min</button></div></div></div>`;
   return top + `<div class="progress"><i style="width:${(c.i / n) * 100}%"></i></div>
   <p class="stepno">Étape ${c.i + 1} sur ${n}</p>
-  <p class="instr">${esc(st.instruction)}</p>
+  <p class="instr">${stepRender(st, r, c.f, c.i, true)}</p>
   ${(si => si.length ? `<div class="chips"><span class="chiplab">Ingrédients</span>${si.map(x => `<span class="chip">${esc(scaleIngr(x, c.f))}</span>`).join('')}</div>` : '')(stepIngr(r, st))}
   ${(sm => sm.length ? `<div class="chips"><span class="chiplab">Matériel</span>${sm.map(x => { const key = (c.mats || []).find(m => norm(m) === norm(x)); const v = key ? c.mat[key] : ''; return `<span class="chip tool">${esc(x)}${v ? ` : ${esc(v)}` : ''}</span>`; }).join('')}</div>` : '')(stepMat(r, st))}
   ${st.notes.map(x => `<div class="notebox">${esc(x)}</div>`).join('')}
