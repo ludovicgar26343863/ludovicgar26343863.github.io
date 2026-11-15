@@ -284,6 +284,20 @@ label.btn{cursor:pointer;position:relative}
 #viewer.zoom img{max-width:none;max-height:none;width:250%;cursor:zoom-out}
 #viewer .vclose{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:12px;width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.9);color:#000;font-size:22px;font-weight:700;cursor:pointer;z-index:51}
 
+.zbox:not(.cur){opacity:.5;pointer-events:none}
+.zbox:not(.cur) .zdel{pointer-events:auto}
+.zbox.cur{cursor:move;pointer-events:auto}
+.zbox.moving{border-style:dashed}
+.zbox .zdel{right:auto;left:50%;transform:translateX(-50%);border-radius:0 0 6px 6px}
+.zbox .ztag{left:12px}
+.zh{position:absolute;width:34px;height:34px;transform:translate(-50%,-50%);z-index:2;touch-action:none}
+.zh::after{content:"";position:absolute;inset:9px;background:#fff;border:3px solid var(--zc);border-radius:50%}
+.zh[data-c="nw"]{left:0;top:0}
+.zh[data-c="ne"]{left:100%;top:0}
+.zh[data-c="sw"]{left:0;top:100%}
+.zh[data-c="se"]{left:100%;top:100%}
+.zwrap{overflow:visible}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -302,7 +316,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.22';
+const APP_VERSION = '1.23';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1944,13 +1958,15 @@ async function openZones(files){
 }
 function freeZones(){ if (S.zones) S.zones.imgs.forEach(im => URL.revokeObjectURL(im.url)); S.zones = null; }
 function zonesHtml(im){
-  return im.rects.map((r, i) => { const t = ZT.find(x => x[0] === r.type); return `<div class="zbox" style="left:${r.x * 100}%;top:${r.y * 100}%;width:${r.w * 100}%;height:${r.h * 100}%;--zc:${t[2]}"><span class="ztag">${t[1]}</span><button class="zdel" data-act="z-del" data-i="${i}" aria-label="Retirer ce cadre ${t[1]}">✕</button></div>`; }).join('');
+  const cur = S.zones ? S.zones.type : '';
+  return im.rects.map((r, i) => { const t = ZT.find(x => x[0] === r.type), on = r.type === cur; return `<div class="zbox${on ? ' cur' : ''}" data-i="${i}" style="left:${r.x * 100}%;top:${r.y * 100}%;width:${r.w * 100}%;height:${r.h * 100}%;--zc:${t[2]}"><span class="ztag">${t[1]}</span><button class="zdel" data-act="z-del" data-i="${i}" aria-label="Retirer ce cadre ${t[1]}">✕</button>${on ? ['nw', 'ne', 'sw', 'se'].map(c => `<span class="zh" data-c="${c}"></span>`).join('') : ''}</div>`; }).join('');
 }
+
 function vZones(){
   const z = S.zones, im = z.imgs[z.cur], n = z.imgs.length;
   const counts = ZT.map(([k, l]) => { const c = z.imgs.reduce((a, x) => a + x.rects.filter(r => r.type === k).length, 0); return c ? `${l} : ${c}` : ''; }).filter(Boolean);
   return `<div class="topbar"><button class="btn ghost" data-act="z-cancel">‹ Annuler</button><h2>Zones de la recette</h2></div>
-  <p class="hint" style="margin-top:0">Choisis ce que tu veux montrer, puis trace un cadre du doigt sur la photo. Tu peux tracer plusieurs cadres par type ; un texte sur deux colonnes est séparé automatiquement. Touche ✕ pour retirer un cadre.</p>
+  <p class="hint" style="margin-top:0">Choisis ce que tu veux montrer, puis trace un cadre du doigt sur la photo. Tu peux tracer plusieurs cadres par type ; un texte sur deux colonnes est séparé automatiquement. Les cadres du type choisi se déplacent du doigt et s’agrandissent par leurs coins ; touche ✕ pour en retirer un.</p>
   <div class="ztypes" role="radiogroup" aria-label="Type de zone">${ZT.map(([k, l, c]) => `<button role="radio" aria-checked="${z.type === k}" data-act="z-type" data-k="${k}" style="--zc:${c}">${l}</button>`).join('')}</div>
   ${n > 1 ? `<div class="zpager"><button class="iconbtn" data-act="z-prev" ${z.cur === 0 ? 'disabled' : ''} aria-label="Photo précédente">‹</button><span>Photo ${z.cur + 1} sur ${n}</span><button class="iconbtn" data-act="z-next" ${z.cur === n - 1 ? 'disabled' : ''} aria-label="Photo suivante">›</button></div>` : ''}
   <div class="zwrap" id="zwrap" style="aspect-ratio:${im.w} / ${im.h};width:min(100%, calc(64vh * ${(im.w / im.h).toFixed(4)}))"><img src="${im.url}" alt="Photo de la recette" draggable="false"><div class="zlayer" id="zlayer">${zonesHtml(im)}</div></div>
@@ -1963,6 +1979,14 @@ document.addEventListener('pointerdown', e => {
   const wrap = e.target.closest && e.target.closest('#zwrap');
   if (!wrap || !S.zones || e.target.closest('.zdel')) return;
   e.preventDefault();
+  const box = e.target.closest('.zbox.cur');
+  if (box) {
+    const i = +box.dataset.i, r0 = { ...S.zones.imgs[S.zones.cur].rects[i] };
+    zd = { mode:e.target.classList.contains('zh') ? e.target.dataset.c : 'move', i, r0, r:r0, el:box, b:wrap.getBoundingClientRect(), id:e.pointerId, sx:e.clientX, sy:e.clientY };
+    box.classList.add('moving');
+    try { wrap.setPointerCapture(e.pointerId); } catch (x) {}
+    return;
+  }
   const b = wrap.getBoundingClientRect(), t = ZT.find(q => q[0] === S.zones.type);
   const el = document.createElement('div'); el.className = 'zbox drawing'; el.style.setProperty('--zc', t[2]);
   $('#zlayer').appendChild(el);
@@ -1970,6 +1994,22 @@ document.addEventListener('pointerdown', e => {
   try { wrap.setPointerCapture(e.pointerId); } catch (x) {}
 });
 function zdMove(e){
+  if (zd.mode) {
+    const dx = (e.clientX - zd.sx) / zd.b.width, dy = (e.clientY - zd.sy) / zd.b.height, r0 = zd.r0;
+    let x = r0.x, y = r0.y, w = r0.w, h = r0.h;
+    if (zd.mode === 'move') { x = Math.max(0, Math.min(1 - w, x + dx)); y = Math.max(0, Math.min(1 - h, y + dy)); }
+    else {
+      let x1 = x, y1 = y, x2 = x + w, y2 = y + h;
+      if (zd.mode.includes('w')) x1 = Math.min(x2 - 0.03, Math.max(0, x1 + dx));
+      if (zd.mode.includes('e')) x2 = Math.max(x1 + 0.03, Math.min(1, x2 + dx));
+      if (zd.mode.includes('n')) y1 = Math.min(y2 - 0.015, Math.max(0, y1 + dy));
+      if (zd.mode.includes('s')) y2 = Math.max(y1 + 0.015, Math.min(1, y2 + dy));
+      x = x1; y = y1; w = x2 - x1; h = y2 - y1;
+    }
+    zd.r = { ...r0, x, y, w, h };
+    Object.assign(zd.el.style, { left:x * 100 + '%', top:y * 100 + '%', width:w * 100 + '%', height:h * 100 + '%' });
+    return;
+  }
   const c = v => Math.max(0, Math.min(1, v)), x = c((e.clientX - zd.b.left) / zd.b.width), y = c((e.clientY - zd.b.top) / zd.b.height), x0 = c(zd.x0), y0 = c(zd.y0);
   const r = { x:Math.min(x0, x), y:Math.min(y0, y), w:Math.abs(x - x0), h:Math.abs(y - y0) }; zd.r = r;
   Object.assign(zd.el.style, { left:r.x * 100 + '%', top:r.y * 100 + '%', width:r.w * 100 + '%', height:r.h * 100 + '%' });
@@ -1977,10 +2017,12 @@ function zdMove(e){
 document.addEventListener('pointermove', e => { if (zd && e.pointerId === zd.id) zdMove(e); });
 document.addEventListener('pointerup', e => {
   if (!zd || e.pointerId !== zd.id) return;
-  zdMove(e); const r = zd.r; zd.el.remove(); zd = null;
+  zdMove(e);
+  if (zd.mode) { if (S.zones) S.zones.imgs[S.zones.cur].rects[zd.i] = zd.r; zd = null; render(); return; }
+  const r = zd.r; zd.el.remove(); zd = null;
   if (r && r.w > 0.03 && r.h > 0.015 && S.zones) { S.zones.imgs[S.zones.cur].rects.push({ type:S.zones.type, ...r }); render(); }
 });
-document.addEventListener('pointercancel', () => { if (zd) { zd.el.remove(); zd = null; } });
+document.addEventListener('pointercancel', () => { if (!zd) return; if (zd.mode) { zd = null; render(); } else { zd.el.remove(); zd = null; } });
 /* Préparation des images pour la lecture : agrandissement, gris, séparation des colonnes */
 function toCanvas(img, sx, sy, sw, sh, k){
   const cv = document.createElement('canvas');
@@ -2025,6 +2067,8 @@ function cropZone(im, r, cols){
 /* Corrections des erreurs de lecture les plus fréquentes */
 function cleanOcr(txt){
   return String(txt || '')
+    .replace(/(^|[•·▪●*\-–]\s*)(?:7%|%|Y2|V2|¥2|1\/2|½2)(?=\s+\p{Ll})/gmu, '$1½')
+    .replace(/(^|[•·▪●*\-–]\s*)(?:7\/4|74%|%4)(?=\s+\p{Ll})/gmu, '$1¼')
     .replace(/(\p{L})[-‐‑]\s*\n\s*(\p{Ll})/gu, '$1$2')
     .replace(/(\p{L})[-‐‑] (\p{Ll})/gu, '$1$2')
     .replace(/\bI[!|1](?=\s|$)/gm, 'Il')
@@ -2109,7 +2153,7 @@ function zonesToMarkers(by){
   const title = by.titre.map(t => zoneLines(t).join(' ')).join(' ').replace(/\s+/g, ' ').trim();
   const ing = [];
   by.ingredients.forEach(t => zoneLines(t, ZH.ingredients).forEach(l => {
-    const s = zStrip(l); if (!s || /^pour\s+\d+/i.test(s)) return;
+    const s = zStrip(l); if (!s || /^pour\s+\d+/i.test(s) || (/:\s*$/.test(s) && !/\d/.test(s))) return;
     if (ing.length && (/^\(/.test(s) || /(,|-|\bde|\bd')$/i.test(ing[ing.length - 1]))) ing[ing.length - 1] += ' ' + s; else ing.push(s);
   }));
   const ingS = ing.flatMap(splitIngredients); ing.length = 0; ing.push(...ingS);
