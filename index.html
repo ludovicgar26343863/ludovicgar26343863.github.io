@@ -316,7 +316,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.23';
+const APP_VERSION = '1.24';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1587,6 +1587,16 @@ function loadTess(){
   });
   return tessP;
 }
+function autoInvert(cv){
+  const g = cv.getContext('2d'), d = g.getImageData(0, 0, cv.width, cv.height).data;
+  let sum = 0, n = 0; for (let i = 0; i < d.length; i += 40) { sum += d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114; n++; }
+  if (n && sum / n < 110) {
+    const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height;
+    const g2 = c2.getContext('2d'); g2.filter = 'invert(1)'; g2.drawImage(cv, 0, 0);
+    g.clearRect(0, 0, cv.width, cv.height); g.drawImage(c2, 0, 0);
+  }
+  return cv;
+}
 function shrink(file, max = 2000){
   return new Promise(res => {
     const url = URL.createObjectURL(file), img = new Image();
@@ -1594,6 +1604,7 @@ function shrink(file, max = 2000){
       const k = Math.min(1, max / Math.max(img.width, img.height)), cv = document.createElement('canvas');
       cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
       const g = cv.getContext('2d'); g.filter = 'grayscale(1) contrast(1.25)'; g.drawImage(img, 0, 0, cv.width, cv.height);
+      autoInvert(cv);
       URL.revokeObjectURL(url); cv.toBlob(b => res(b || file), 'image/png');
     };
     img.onerror = () => { URL.revokeObjectURL(url); res(file); };
@@ -1626,7 +1637,7 @@ function textToMarkers(raw){
     if (pm && l.length < 45) continue;
     if (!title && !mode && l.length <= 80) { title = l; continue; }
     if (!mode) { if (sawHeader) continue; mode = 'auto'; }
-    if (mode === 'ing') ing.push(...splitIngredients(strip(l)));
+    if (mode === 'ing') ing.push(...splitIngredients(fixFraction(strip(l))));
     else if (mode === 'mat') strip(l).split(/\s*[,;]\s*/).filter(Boolean).forEach(x => mat.push(cap(x)));
     else if (mode === 'step') stepLines.push(l);
     else { const s2 = strip(l); if (splitQty(s2) && s2.length < 60) ing.push(s2); else stepLines.push(l); }
@@ -2056,7 +2067,7 @@ function cropZone(im, r, cols){
     const img = new Image();
     img.onload = async () => {
       const sx = r.x * img.naturalWidth, sy = r.y * img.naturalHeight, sw = r.w * img.naturalWidth, sh = r.h * img.naturalHeight;
-      const cv = toCanvas(img, sx, sy, sw, sh, Math.min(2.5, 2400 / Math.max(sw, sh)));
+      const cv = binarize(autoInvert(toCanvas(img, sx, sy, sw, sh, Math.min(3, 2600 / Math.max(sw, sh)))));
       const parts = cols ? splitCols(cv) : [cv];
       res((await Promise.all(parts.map(canvasBlob))).filter(Boolean));
     };
@@ -2102,7 +2113,21 @@ async function ocrCrops(blobs, status, isCancelled){
 }
 const ZH = { ingredients:/^(les\s+)?ingr[ée]dients?\b/i, materiel:/^(le\s+)?(mat[ée]riel|ustensiles?)\b/i, etapes:/^(la\s+)?(pr[ée]paration|[ée]tapes?|instructions?|r[ée]alisation|progression|m[ée]thode|d[ée]roulement)\b/i };
 const zoneLines = (txt, head) => String(txt || '').split('\n').map(l => l.replace(/[ \t]+/g, ' ').trim()).filter(l => l && /[a-zA-Z0-9À-ÿ]/.test(l) && !(head && l.length < 45 && head.test(l) && !/:\s*\S/.test(l)));
-const zStrip = l => l.replace(/^[-–—•*·▪●○◦✓☐]\s*/, '').replace(/^(ingr[ée]dients?|mat[ée]riel|ustensiles?|pr[ée]paration)\s*:\s*/i, '').trim();
+/* Fractions en tête d'ingrédient, souvent mal lues (« 7% carotte », « Y2 citron », « l/2 oignon ») */
+function fixFraction(s){
+  s = String(s || '').trim();
+  const m = s.match(/^(\S{1,4})\s+(?=[a-zà-ÿœ])/); if (!m) return s;
+  const tok = m[1], rest = s.slice(m[0].length);
+  if (/^[a-zà-ÿœ]+$/i.test(tok) && !/^(?:y[2z]|v[2z])$/i.test(tok)) return s;
+  if (/^\d+(?:[.,]\d+)?$/.test(tok) || /^\d+[a-z]{1,2}$/i.test(tok)) return s;
+  let f = null;
+  if (/^(?:[1lIi|][\/⁄][4]|%4|7\/4|¼)$/.test(tok)) f = '¼';
+  else if (/^(?:3[\/⁄]4|¾)$/.test(tok)) f = '¾';
+  else if (/^(?:[1lIi|][\/⁄][2zZ]|[1lIi|][\/⁄]|%|\d?%|[YVvy¥][2zZaA]?|¥|½.?|%[2z]?)$/.test(tok)) f = '½';
+  else if (!/[a-zà-ÿ0-9]/i.test(tok) || (tok.length <= 2 && /[^a-zà-ÿ0-9]/i.test(tok))) f = '½';
+  return f ? `${f} ${rest}` : s;
+}
+const zStrip = l => fixFraction(l.replace(/^[-–—•*·▪●○◦✓☐+»«°]\s*/, '').replace(/^(ingr[ée]dients?|mat[ée]riel|ustensiles?|pr[ée]paration)\s*:\s*/i, '').trim());
 function groupSteps(lines){
   const numRe = /^(?:[ée]tape\s*)?(\d{1,2})\s*[.)\-–:]\s*/i, numbered = lines.some(l => numRe.test(l)), steps = [];
   let cur = ''; const push = () => { const t = cur.trim(); if (t) steps.push(t); cur = ''; };
