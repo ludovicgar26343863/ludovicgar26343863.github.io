@@ -298,6 +298,10 @@ label.btn{cursor:pointer;position:relative}
 .zh[data-c="se"]{left:100%;top:100%}
 .zwrap{overflow:visible}
 
+.porin{width:auto;max-width:130px;text-align:center;font-family:var(--f-head);font-weight:800;font-size:40px;color:var(--herb);background:var(--surface);padding:4px 8px;-moz-appearance:textfield}
+.porin.small{font-size:24px;max-width:90px}
+.porin::-webkit-outer-spin-button,.porin::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -316,7 +320,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.24';
+const APP_VERSION = '1.26';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -787,7 +791,7 @@ function startCook(id){
 }
 function setPortions(n){
   const c = S.cook; if (!c) return;
-  c.portions = Math.max(1, Math.min(50, n)); c.f = c.portions / c.base;
+  c.portions = Math.max(1, Math.round(n) || 1); c.f = c.portions / c.base;
   if (S.screen === 'cook' && c.i < 0) render();
 }
 function goStep(i, auto){
@@ -1078,6 +1082,13 @@ function vSettings(){
   ${toggle('lire', 'Lire les étapes à voix haute')}
   ${toggle('autoMinuteur', 'Démarrer le chrono à chaque nouvelle étape')}
   ${toggle('lireNotes', 'Lire les notes après chaque étape')}
+  <h3 class="sub">Lecture intelligente (gratuite)</h3>
+  <p class="hint" style="margin-top:0">La lecture sur le téléphone se trompe sur certains signes (½, puces, tickets pâles). Avec une clé Gemini gratuite de Google, les photos de recettes et les tickets sont lus par une intelligence artificielle, bien plus fiable. Sans réseau, l’application revient à la lecture sur le téléphone.</p>
+  <div class="totals"><span>État</span><b>${geminiKey() ? 'active (Gemini)' : 'inactive'}</b></div>
+  <ol class="gaps" style="color:var(--ink)"><li>Ouvre <b>aistudio.google.com/apikey</b> et connecte-toi avec ton compte Google.</li><li>Touche « Create API key » (ou « Créer une clé API »), puis copie la clé.</li><li>Colle-la ci-dessous et touche « Enregistrer la clé ».</li></ol>
+  <label class="lbl">Clé Gemini<input id="gem-key" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…" value="${esc(geminiKey())}"></label>
+  <div class="row-btns"><button class="btn primary" data-act="gem-save" style="flex:1">Enregistrer la clé</button><button class="btn" data-act="gem-test" style="flex:1" ${geminiKey() ? '' : 'disabled'}>Tester</button>${geminiKey() ? '<button class="btn danger" data-act="gem-del">Retirer</button>' : ''}</div>
+  <p class="hint">La clé reste sur ce téléphone et n’est envoyée qu’à Google. En version gratuite, Google peut utiliser les images envoyées pour améliorer ses services : n’y mets pas de document personnel.</p>
   <h3 class="sub">Micro et voix</h3>
   <p class="hint" style="margin-top:0">Si la commande vocale ne marche pas, lance ce test : il vérifie chaque maillon (autorisation, micro, reconnaissance) et indique celui qui bloque.</p>
   <div class="stack"><button class="btn" data-act="mic-test">Tester le micro</button></div>
@@ -1141,7 +1152,7 @@ function vEditor(){
   <div class="withmic"><input id="f-titre" data-f="titre" value="${esc(d.titre)}" maxlength="100" placeholder="Risotto aux champignons" aria-label="Nom de la recette">${micBtn('f-titre', 'space')}</div>
   <div class="lbl">Description</div>
   <div class="withmic"><textarea id="f-desc" data-f="description" rows="2" aria-label="Description">${esc(d.description)}</textarea>${micBtn('f-desc', 'space')}</div>
-  <label class="lbl">Portions<input class="short" data-f="portions" type="number" inputmode="numeric" min="1" max="50" value="${d.portions ?? ''}"></label>
+  <label class="lbl">Portions<input class="short" data-f="portions" type="number" inputmode="numeric" min="1" value="${d.portions ?? ''}"></label>
   <h3 class="sub">Ingrédients</h3>
   ${d.ingredients.map((x, i) => `<div class="ingrow"><input id="f-ing-${i}" data-f="ing" data-i="${i}" value="${esc(x)}" placeholder="200 g de farine" aria-label="Ingrédient ${i + 1}">${micBtn(`f-ing-${i}`, 'space')}<button class="iconbtn" data-act="del-ing" data-i="${i}" aria-label="Retirer l’ingrédient">✕</button></div>`).join('')}
   <button class="btn mini" data-act="add-ing">Ajouter un ingrédient</button>
@@ -1162,7 +1173,7 @@ function vCook(){
     <p class="stepno">${esc(r.titre)}</p><h2 class="instr">Pour combien de portions ?</h2>
     ${thumbs(r.photos, false)}
     ${r.description ? `<p class="desc">${esc(r.description)}</p>` : ''}
-    <div class="stepper"><button class="iconbtn big" data-act="por-minus" aria-label="Une portion de moins" ${c.portions <= 1 ? 'disabled' : ''}>−</button><output id="por" aria-live="polite">${c.portions}</output><button class="iconbtn big" data-act="por-plus" aria-label="Une portion de plus" ${c.portions >= 50 ? 'disabled' : ''}>+</button></div>
+    <div class="stepper"><button class="iconbtn big" data-act="por-minus" aria-label="Une portion de moins" ${c.portions <= 1 ? 'disabled' : ''}>−</button><input id="por" class="porin" type="number" inputmode="numeric" min="1" value="${c.portions}" data-por="cook" aria-label="Nombre de portions"><button class="iconbtn big" data-act="por-plus" aria-label="Une portion de plus">+</button></div>
     <p class="porhint">${r.portions ? `Recette prévue pour ${plural(r.portions, 'portion')}${c.f !== 1 ? ` : quantités et temps ${ratio}` : ''}.` : 'La recette n’indique pas de portions : 1 correspond aux quantités d’origine.'}</p>
     <div class="totals"><span>Temps total estimé</span><b>${est ? fmtDur(est) : 'non renseigné'}</b></div>
     <p class="porhint" id="matest">${matEstText()}</p>
@@ -1218,7 +1229,7 @@ function vShop(){
   const rs = [...S.recipes].sort((a, b) => a.titre.localeCompare(b.titre, 'fr'));
   return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Liste de courses</h2></div>
   <p class="hint" style="margin-top:0">Coche les recettes et choisis le nombre de portions : les quantités s’additionnent.</p>
-  ${rs.map(r => { const p = S.shop.sel[r.id], on = p != null; return `<div class="shoprow${on ? ' on' : ''}"><label class="pick"><input type="checkbox" data-shop="${r.id}" ${on ? 'checked' : ''}><span><b>${esc(r.titre)}</b><small>${r.portions ? `Prévue pour ${plural(r.portions, 'portion')}` : 'Portions non renseignées'}</small></span></label>${on ? `<div class="stepper"><button class="iconbtn" data-act="shop-minus" data-id="${r.id}" aria-label="Une portion de moins" ${p <= 1 ? 'disabled' : ''}>−</button><output>${p}</output><button class="iconbtn" data-act="shop-plus" data-id="${r.id}" aria-label="Une portion de plus" ${p >= 50 ? 'disabled' : ''}>+</button><span class="unit">${p > 1 ? 'portions' : 'portion'}</span></div>` : ''}</div>`; }).join('')}
+  ${rs.map(r => { const p = S.shop.sel[r.id], on = p != null; return `<div class="shoprow${on ? ' on' : ''}"><label class="pick"><input type="checkbox" data-shop="${r.id}" ${on ? 'checked' : ''}><span><b>${esc(r.titre)}</b><small>${r.portions ? `Prévue pour ${plural(r.portions, 'portion')}` : 'Portions non renseignées'}</small></span></label>${on ? `<div class="stepper"><button class="iconbtn" data-act="shop-minus" data-id="${r.id}" aria-label="Une portion de moins" ${p <= 1 ? 'disabled' : ''}>−</button><input class="porin small" type="number" inputmode="numeric" min="1" value="${p}" data-por="${r.id}" aria-label="Nombre de portions"><button class="iconbtn" data-act="shop-plus" data-id="${r.id}" aria-label="Une portion de plus">+</button><span class="unit">${p > 1 ? 'portions' : 'portion'}</span></div>` : ''}</div>`; }).join('')}
   ${items.length ? `<h3 class="sub">À acheter</h3><ul class="shoplist">${items.map(it => { const off = S.shop.skip[it.key]; return `<li><label class="${off ? 'off' : ''}"><input type="checkbox" data-skip="${esc(it.key)}" ${off ? '' : 'checked'}><span>${esc(shopLabel(it))}</span></label></li>`; }).join('')}</ul>${(t => t != null ? `<div class="totals"><span>Total estimé</span><b>${fmtEuro(t)}</b></div>` : '')(shopTotal(items))}<p class="hint">Décoche ce que tu as déjà. « Envoyer vers Notes » ouvre le menu de partage : choisis Samsung Notes pour créer une nouvelle note avec la liste.</p>` : `<div class="empty"><p>Coche une ou plusieurs recettes pour composer la liste.</p></div>`}
   <div class="savebar"><button class="btn primary" data-act="shop-send" ${items.length ? '' : 'disabled'}>Envoyer vers Notes</button></div>`;
 }
@@ -1399,7 +1410,7 @@ document.addEventListener('click', async e => {
     case 'backup-save': saveBackup(); break;
     case 'backup-share': shareBackup(); break;
     case 'go-manage': S.screen = 'manage'; render(); window.scrollTo(0, 0); break;
-    case 'shop-minus': case 'shop-plus': { const p = S.shop.sel[id]; if (p == null) break; S.shop.sel[id] = Math.max(1, Math.min(50, p + (a === 'shop-plus' ? 1 : -1))); render(); break; }
+    case 'shop-minus': case 'shop-plus': { const p = S.shop.sel[id]; if (p == null) break; S.shop.sel[id] = Math.max(1, p + (a === 'shop-plus' ? 1 : -1)); render(); break; }
     case 'shop-send': sendShop(); break;
     case 'shop-save': exportText('liste-de-courses.txt', S.shopText); break;
     case 'import': fileInput.click(); break;
@@ -1444,6 +1455,9 @@ document.addEventListener('click', async e => {
     case 'quit': quitCook(); break;
     case 'mic-retry': ensureAudio(); micRetry(); break;
     case 'mic-test': micTest(); break;
+    case 'gem-save': { const k = (($('#gem-key') || {}).value || '').trim(); store(GKEY, k); render(); toast(k ? 'Clé enregistrée' : 'Clé effacée'); break; }
+    case 'gem-del': store(GKEY, ''); render(); toast('Lecture intelligente désactivée'); break;
+    case 'gem-test': { toast('Test en cours…'); try { const { text } = await aiCall('Réponds seulement par le mot OK.', []); toast(/ok/i.test(text) ? 'La lecture intelligente fonctionne' : 'Réponse inattendue : ' + String(text).slice(0, 40)); } catch (e) { toast(e.code === 'key' ? 'Clé refusée : vérifie-la' : e.code === 'quota' ? 'Limite gratuite atteinte, réessaie plus tard' : e.code === 'network' ? 'Pas de connexion internet' : 'Le test a échoué'); } break; }
     case 'photo-view': viewPhoto(b.dataset.id); break;
     case 'photo-del': if (S.draft) { S.draft.photos.splice(+b.dataset.i, 1); render(); } break;
     case 'viewer-close': closeViewer(); break;
@@ -1499,6 +1513,12 @@ document.addEventListener('input', e => {
   else if (f === 'note') d.etapes[s].notes[k] = t.value;
 });
 document.addEventListener('change', e => {
+  const pk = e.target.dataset && e.target.dataset.por;
+  if (pk) {
+    const n = Math.max(1, Math.round(parseFloat(String(e.target.value).replace(',', '.'))) || 1);
+    if (pk === 'cook') setPortions(n); else if (S.shop.sel[pk] != null) { S.shop.sel[pk] = n; render(); }
+    return;
+  }
   const fk = e.target.dataset && e.target.dataset.file;
   if (fk) {
     const files = [...(e.target.files || [])]; e.target.value = '';
@@ -1705,17 +1725,46 @@ async function readPhotoLocal(files){
     const btn = $('#sheet [data-act="ph-cancel"]'); if (btn) btn.textContent = 'Fermer';
   }
 }
-async function readPhoto(files){
+/* ---------- Lecture intelligente : Claude dans le prototype, Gemini (clé gratuite) dans l'application ---------- */
+const GKEY = 'pasapas:gemini';
+const GMODELS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
+const ZONE_PROMPT = 'Transcris exactement le texte de cette image, ligne par ligne, en gardant les retours à la ligne et les puces. Écris les fractions avec les caractères ½, ¼, ¾ (ou 1/3, 2/3). Si le texte est sur plusieurs colonnes, transcris la colonne de gauche en entier puis celle de droite. Réponds uniquement par le texte, sans commentaire ni mise en forme.';
+const geminiKey = () => String(load(GKEY, '') || '').trim();
+async function aiReady(){ const smp = await getSample(); return !!((smp && S.photoLim) || geminiKey()); }
+const aiName = () => (window.claude && S.photoLim) ? 'Claude' : 'Gemini';
+async function aiCall(prompt, images, opts = {}){
   const smp = await getSample();
-  if (smp && S.photoLim) return readPhotoClaude(files);
+  if (smp && S.photoLim) return smp(prompt, { images:images.slice(0, S.photoLim.maxCount || images.length), signal:opts.signal, onText:opts.onText });
+  const key = geminiKey(); if (!key) throw { code:'no_ai' };
+  const parts = [{ text:prompt }];
+  for (const im of images) {
+    const b = (im.size > 1500000 || !/^image\/(png|jpeg|webp)$/.test(im.type || '')) ? ((await compressImage(im, 2000, 0.88)) || im) : im;
+    const d = await blobToDataURL(b); if (!d) continue;
+    parts.push({ inline_data:{ mime_type:(d.match(/^data:([^;]+)/) || [])[1] || 'image/jpeg', data:d.split(',')[1] } });
+  }
+  let last = { code:'ai' };
+  for (const model of GMODELS) {
+    let r;
+    try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-goog-api-key':key }, body:JSON.stringify({ contents:[{ role:'user', parts }], generationConfig:{ temperature:0 } }), signal:opts.signal }); }
+    catch (e) { if (opts.signal && opts.signal.aborted) throw { code:'aborted' }; throw { code:'network' }; }
+    if (r.status === 404) { last = { code:'model' }; continue; }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw { code:r.status === 429 ? 'quota' : (r.status === 400 || r.status === 401 || r.status === 403) ? 'key' : 'ai', detail:j.error && j.error.message };
+    const text = (((j.candidates || [])[0] || {}).content || { parts:[] }).parts.map(p => p.text || '').join('');
+    if (opts.onText) opts.onText({ text });
+    return { text };
+  }
+  throw last;
+}
+async function readPhoto(files){
+  if (await aiReady()) return readPhotoClaude(files);
   return readPhotoLocal(files);
 }
 async function readPhotoClaude(files){
-  const smp = await getSample(); if (!smp) return;
   const ctl = new AbortController(); S.phCtl = ctl;
-  sheet(`<h3>Lecture ${files.length > 1 ? 'des photos' : 'de la photo'}</h3><p id="ph-st">Claude lit la recette, cela peut prendre une minute…</p><textarea class="raw" id="ph-out" readonly aria-label="Texte lu sur la photo"></textarea><div class="acts"><button class="btn" data-act="ph-cancel">Annuler</button></div>`);
+  sheet(`<h3>Lecture ${files.length > 1 ? 'des photos' : 'de la photo'}</h3><p id="ph-st">${aiName()} lit la recette, cela peut prendre une minute…</p><textarea class="raw" id="ph-out" readonly aria-label="Texte lu sur la photo"></textarea><div class="acts"><button class="btn" data-act="ph-cancel">Annuler</button></div>`);
   try {
-    const { text } = await smp(PHOTO_PROMPT, { images:files, signal:ctl.signal, onText:({ text }) => { const o = $('#ph-out'), st = $('#ph-st'); if (o) { o.value = text; o.scrollTop = o.scrollHeight; } if (st) st.textContent = 'Transcription en cours…'; } });
+    const { text } = await aiCall(PHOTO_PROMPT, files, { signal:ctl.signal, onText:({ text }) => { const o = $('#ph-out'), st = $('#ph-st'); if (o) { o.value = text; o.scrollTop = o.scrollHeight; } if (st) st.textContent = 'Transcription en cours…'; } });
     if (ctl.signal.aborted || S.screen !== 'editor') return;
     const raw = String(text).replace(/```[a-z]*\n?/gi, '').trim();
     if (/^AUCUNE RECETTE/i.test(raw)) throw { code:'empty' };
@@ -1735,6 +1784,8 @@ async function readPhotoClaude(files){
     const msg = code === 'not_granted' ? 'La lecture de la photo n’a pas été autorisée.'
       : code === 'empty' ? 'Aucune recette lisible sur cette photo. Essaie avec une photo plus nette et bien cadrée.'
       : code === 'image_rejected' ? 'Cette image n’a pas pu être lue (format ou taille).'
+      : code === 'key' ? 'Clé Gemini refusée : vérifie-la dans Paramétrage → Lecture intelligente.'
+      : code === 'quota' ? 'Limite gratuite de Gemini atteinte pour le moment : réessaie dans une minute.'
       : (!code && e && e.message) ? e.message : 'La lecture a échoué. Réessaie dans un instant.';
     const st = $('#ph-st'); if (st) st.textContent = msg; else toast(msg);
     const btn = $('#sheet [data-act="ph-cancel"]'); if (btn) btn.textContent = 'Fermer';
@@ -1929,15 +1980,17 @@ async function readTicket(files){
   const status = (msg, pct) => { const st = $('#ph-st'), bar = $('#ph-bar'); if (st) st.textContent = msg; if (bar && pct != null) bar.style.width = Math.max(3, Math.round(pct)) + '%'; };
   try {
     let items = [], date = '';
-    const smp = await getSample();
-    if (smp && S.photoLim) {
-      ctl = new AbortController(); status('Claude lit le ticket…', 40);
-      const { text } = await smp(TICKET_PROMPT, { images:files.slice(0, S.photoLim.maxCount || 1), signal:ctl.signal });
+    let aiDone = false;
+    if (await aiReady()) try {
+      ctl = new AbortController(); status(`${aiName()} lit le ticket…`, 40);
+      const { text } = await aiCall(TICKET_PROMPT, files, { signal:ctl.signal });
       const raw = String(text), a = raw.indexOf('{'), z = raw.lastIndexOf('}');
       const obj = a >= 0 ? JSON.parse(raw.slice(a, z + 1)) : {};
       date = obj.date || '';
       items = (obj.articles || []).map(x => ({ libelle:String(x.libelle || x.nom || '').trim(), nom:cap(String(x.nom || x.libelle || '').trim()), prix:+x.prix || 0, qte:+x.quantite || 1, unite:UNIT_OPTS.includes(x.unite) ? x.unite : 'pièce', detected:!!x.contenance_lue })).filter(x => x.libelle);
-    } else {
+      aiDone = true;
+    } catch (e) { if (cancelled) return; status('Lecture intelligente indisponible : lecture sur le téléphone…', 8); }
+    if (!aiDone) {
       const txt = await ocrRun(files, status, () => cancelled);
       if (cancelled) return;
       ({ items, date } = parseReceipt(txt));
@@ -2089,15 +2142,20 @@ function cleanOcr(txt){
     .replace(/[ \t]{2,}/g, ' ');
 }
 async function ocrCrops(blobs, status, isCancelled){
-  const out = [], smp = await getSample();
-  if (smp && S.photoLim) {
-    for (let i = 0; i < blobs.length; i++) {
-      if (isCancelled()) break;
-      status(`Lecture de la zone ${i + 1} sur ${blobs.length}…`, 10 + 85 * i / blobs.length);
-      const { text } = await smp('Transcris exactement le texte de cette image, ligne par ligne, en gardant les retours à la ligne. Réponds uniquement par le texte, sans commentaire ni mise en forme.', { images:[blobs[i]] });
-      out.push(String(text));
+  const out = [];
+  if (await aiReady()) {
+    try {
+      for (let i = 0; i < blobs.length; i++) {
+        if (isCancelled()) break;
+        status(`${aiName()} lit la zone ${i + 1} sur ${blobs.length}…`, 10 + 85 * i / blobs.length);
+        const { text } = await aiCall(ZONE_PROMPT, [blobs[i]]);
+        out.push(String(text).replace(/```[a-z]*\n?/gi, ''));
+      }
+      return out;
+    } catch (e) {
+      if (isCancelled()) return out;
+      out.length = 0; status('Lecture intelligente indisponible : lecture sur le téléphone…', 8);
     }
-    return out;
   }
   status('Chargement du module de lecture…', 5);
   const T = await loadTess(); let page = 0;
@@ -2118,6 +2176,7 @@ function fixFraction(s){
   s = String(s || '').trim();
   const m = s.match(/^(\S{1,4})\s+(?=[a-zà-ÿœ])/); if (!m) return s;
   const tok = m[1], rest = s.slice(m[0].length);
+  if (/^[A-Z]$/.test(tok) && tok !== 'À') return `½ ${rest}`;
   if (/^[a-zà-ÿœ]+$/i.test(tok) && !/^(?:y[2z]|v[2z])$/i.test(tok)) return s;
   if (/^\d+(?:[.,]\d+)?$/.test(tok) || /^\d+[a-z]{1,2}$/i.test(tok)) return s;
   let f = null;
