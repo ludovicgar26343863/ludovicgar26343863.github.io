@@ -320,7 +320,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.26';
+const APP_VERSION = '1.27';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1727,7 +1727,8 @@ async function readPhotoLocal(files){
 }
 /* ---------- Lecture intelligente : Claude dans le prototype, Gemini (clé gratuite) dans l'application ---------- */
 const GKEY = 'pasapas:gemini';
-const GMODELS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
+const GMODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-2.5-flash'];
+let gModelOk = null;
 const ZONE_PROMPT = 'Transcris exactement le texte de cette image, ligne par ligne, en gardant les retours à la ligne et les puces. Écris les fractions avec les caractères ½, ¼, ¾ (ou 1/3, 2/3). Si le texte est sur plusieurs colonnes, transcris la colonne de gauche en entier puis celle de droite. Réponds uniquement par le texte, sans commentaire ni mise en forme.';
 const geminiKey = () => String(load(GKEY, '') || '').trim();
 async function aiReady(){ const smp = await getSample(); return !!((smp && S.photoLim) || geminiKey()); }
@@ -1743,13 +1744,21 @@ async function aiCall(prompt, images, opts = {}){
     parts.push({ inline_data:{ mime_type:(d.match(/^data:([^;]+)/) || [])[1] || 'image/jpeg', data:d.split(',')[1] } });
   }
   let last = { code:'ai' };
-  for (const model of GMODELS) {
-    let r;
-    try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-goog-api-key':key }, body:JSON.stringify({ contents:[{ role:'user', parts }], generationConfig:{ temperature:0 } }), signal:opts.signal }); }
-    catch (e) { if (opts.signal && opts.signal.aborted) throw { code:'aborted' }; throw { code:'network' }; }
-    if (r.status === 404) { last = { code:'model' }; continue; }
-    const j = await r.json().catch(() => ({}));
+  const order = gModelOk ? [gModelOk, ...GMODELS.filter(m => m !== gModelOk)] : GMODELS;
+  for (const model of order) {
+    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), opts.timeout || 60000);
+    const onAbort = () => ctl.abort(); if (opts.signal) opts.signal.addEventListener('abort', onAbort);
+    let r, j;
+    try {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-goog-api-key':key }, body:JSON.stringify({ contents:[{ role:'user', parts }], generationConfig:{ temperature:0 } }), signal:ctl.signal });
+      j = await r.json().catch(() => ({}));
+    } catch (e) {
+      if (opts.signal && opts.signal.aborted) throw { code:'aborted' };
+      throw { code:ctl.signal.aborted ? 'timeout' : 'network' };
+    } finally { clearTimeout(to); if (opts.signal) opts.signal.removeEventListener('abort', onAbort); }
+    if (r.status === 404 || r.status === 500 || r.status === 503) { last = { code:r.status === 404 ? 'model' : 'busy' }; continue; }
     if (!r.ok) throw { code:r.status === 429 ? 'quota' : (r.status === 400 || r.status === 401 || r.status === 403) ? 'key' : 'ai', detail:j.error && j.error.message };
+    gModelOk = model;
     const text = (((j.candidates || [])[0] || {}).content || { parts:[] }).parts.map(p => p.text || '').join('');
     if (opts.onText) opts.onText({ text });
     return { text };
@@ -1764,7 +1773,7 @@ async function readPhotoClaude(files){
   const ctl = new AbortController(); S.phCtl = ctl;
   sheet(`<h3>Lecture ${files.length > 1 ? 'des photos' : 'de la photo'}</h3><p id="ph-st">${aiName()} lit la recette, cela peut prendre une minute…</p><textarea class="raw" id="ph-out" readonly aria-label="Texte lu sur la photo"></textarea><div class="acts"><button class="btn" data-act="ph-cancel">Annuler</button></div>`);
   try {
-    const { text } = await aiCall(PHOTO_PROMPT, files, { signal:ctl.signal, onText:({ text }) => { const o = $('#ph-out'), st = $('#ph-st'); if (o) { o.value = text; o.scrollTop = o.scrollHeight; } if (st) st.textContent = 'Transcription en cours…'; } });
+    const { text } = await aiCall(PHOTO_PROMPT, files, { signal:ctl.signal, timeout:60000, onText:({ text }) => { const o = $('#ph-out'), st = $('#ph-st'); if (o) { o.value = text; o.scrollTop = o.scrollHeight; } if (st) st.textContent = 'Transcription en cours…'; } });
     if (ctl.signal.aborted || S.screen !== 'editor') return;
     const raw = String(text).replace(/```[a-z]*\n?/gi, '').trim();
     if (/^AUCUNE RECETTE/i.test(raw)) throw { code:'empty' };
@@ -1781,6 +1790,7 @@ async function readPhotoClaude(files){
   } catch (e) {
     if (ctl.signal.aborted) return;
     const code = e && e.code;
+    if (['timeout', 'network', 'busy', 'model', 'quota', 'ai'].includes(code) && !(window.claude && S.photoLim)) { closeSheet(); toast('Lecture intelligente indisponible : lecture sur le téléphone'); return readPhotoLocal(files); }
     const msg = code === 'not_granted' ? 'La lecture de la photo n’a pas été autorisée.'
       : code === 'empty' ? 'Aucune recette lisible sur cette photo. Essaie avec une photo plus nette et bien cadrée.'
       : code === 'image_rejected' ? 'Cette image n’a pas pu être lue (format ou taille).'
@@ -1983,7 +1993,7 @@ async function readTicket(files){
     let aiDone = false;
     if (await aiReady()) try {
       ctl = new AbortController(); status(`${aiName()} lit le ticket…`, 40);
-      const { text } = await aiCall(TICKET_PROMPT, files, { signal:ctl.signal });
+      const { text } = await aiCall(TICKET_PROMPT, files, { signal:ctl.signal, timeout:60000 });
       const raw = String(text), a = raw.indexOf('{'), z = raw.lastIndexOf('}');
       const obj = a >= 0 ? JSON.parse(raw.slice(a, z + 1)) : {};
       date = obj.date || '';
@@ -2141,9 +2151,9 @@ function cleanOcr(txt){
     .replace(/(?<![\d%])\s%(?=\s)/g, ' ¼')
     .replace(/[ \t]{2,}/g, ' ');
 }
-async function ocrCrops(blobs, status, isCancelled){
+async function ocrCrops(blobs, status, isCancelled, noAI){
   const out = [];
-  if (await aiReady()) {
+  if (!noAI && await aiReady()) {
     try {
       for (let i = 0; i < blobs.length; i++) {
         if (isCancelled()) break;
@@ -2251,6 +2261,35 @@ function zonesToMarkers(by){
   steps.forEach(st => { out.push('', `Étape : ${st}`); const d = guessTime(st); if (d) out.push(`Temps : ${fmtDur(d)}`); });
   return out.join('\n');
 }
+function cropPlain(im, r){
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      const sx = r.x * img.naturalWidth, sy = r.y * img.naturalHeight, sw = r.w * img.naturalWidth, sh = r.h * img.naturalHeight;
+      const k = Math.min(2, 1600 / Math.max(sw, sh)), cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(sw * k)); cv.height = Math.max(1, Math.round(sh * k));
+      const g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(img, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+      cv.toBlob(b => res(b), 'image/jpeg', 0.9);
+    };
+    img.onerror = () => res(null);
+    img.src = im.url;
+  });
+}
+async function aiTranscribe(blobs, status, signal){
+  const n = blobs.length, what = n > 1 ? `les ${n} zones` : 'la zone', t0 = Date.now();
+  status(`${aiName()} lit ${what}…`, 20);
+  const tick = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000); status(`${aiName()} lit ${what}… ${s} s`, Math.min(92, 20 + s * 2)); }, 1000);
+  try {
+    if (n === 1) { const { text } = await aiCall(ZONE_PROMPT, blobs, { signal, timeout:45000 }); return [String(text).replace(/```[a-z]*\n?/gi, '')]; }
+    if (window.claude && S.photoLim && (S.photoLim.maxCount || 1) < n) { const out = []; for (const b of blobs) { const { text } = await aiCall(ZONE_PROMPT, [b], { signal }); out.push(String(text).replace(/```[a-z]*\n?/gi, '')); } return out; }
+    const prompt = `Voici ${n} images, dans l'ordre. Pour chacune : ${ZONE_PROMPT.replace(/^Transcris/, 'transcris').replace(/ Réponds uniquement.*$/, '')} Réponds uniquement par un tableau JSON de ${n} chaînes de caractères, la transcription de chaque image dans le même ordre, sans bloc de code ni commentaire.`;
+    const { text } = await aiCall(prompt, blobs, { signal, timeout:60000 });
+    const s = String(text), a = s.indexOf('['), z = s.lastIndexOf(']');
+    const arr = a >= 0 ? JSON.parse(s.slice(a, z + 1)) : null;
+    if (!Array.isArray(arr) || arr.length !== n) throw { code:'ai' };
+    return arr.map(x => String(x == null ? '' : x));
+  } finally { clearInterval(tick); }
+}
 async function readZones(){
   const z = S.zones; if (!z) return;
   const jobs = [];
@@ -2261,13 +2300,29 @@ async function readZones(){
   sheet(`<h3>Lecture des zones</h3><p id="ph-st">Découpage de la photo…</p><div class="progress"><i id="ph-bar" style="width:3%"></i></div><div class="acts"><button class="btn" data-act="ph-cancel">Annuler</button></div>`);
   const status = (msg, pct) => { const st = $('#ph-st'), bar = $('#ph-bar'); if (st) st.textContent = msg; if (bar && pct != null) bar.style.width = Math.max(3, Math.round(pct)) + '%'; };
   try {
-    const blobs = [], owner = [];
-    for (let n = 0; n < jobs.length; n++) { const parts = await cropZone(jobs[n].im, jobs[n].r, jobs[n].r.type !== 'titre'); parts.forEach(b => { blobs.push(b); owner.push(n); }); }
-    const texts = await ocrCrops(blobs, status, () => cancelled);
-    if (cancelled || !S.zones) return;
     const by = { titre:[], ingredients:[], materiel:[], etapes:[] };
-    const per = jobs.map(() => []); texts.forEach((x, i) => per[owner[i]].push(x || ''));
-    jobs.forEach((j, n) => by[j.r.type].push(per[n].join('\n')));
+    let ok = false;
+    if (await aiReady()) {
+      const actl = new AbortController(); S.phCtl = { abort(){ cancelled = true; actl.abort(); } };
+      try {
+        const plain = []; for (const j of jobs) plain.push(await cropPlain(j.im, j.r));
+        const texts = await aiTranscribe(plain.filter(Boolean), status, actl.signal);
+        if (cancelled || !S.zones) return;
+        jobs.forEach((j, n) => by[j.r.type].push(texts[n] || ''));
+        ok = true;
+      } catch (e) {
+        if (cancelled) return;
+        status(e && e.code === 'timeout' ? 'Gemini ne répond pas assez vite : lecture sur le téléphone…' : 'Lecture intelligente indisponible : lecture sur le téléphone…', 8);
+      }
+    }
+    if (!ok) {
+      const blobs = [], owner = [];
+      for (let n = 0; n < jobs.length; n++) { const parts = await cropZone(jobs[n].im, jobs[n].r, jobs[n].r.type !== 'titre'); parts.forEach(b => { blobs.push(b); owner.push(n); }); }
+      const texts = await ocrCrops(blobs, status, () => cancelled, true);
+      if (cancelled || !S.zones) return;
+      const per = jobs.map(() => []); texts.forEach((x, i) => per[owner[i]].push(x || ''));
+      jobs.forEach((j, n) => by[j.r.type].push(per[n].join('\n')));
+    }
     const markers = zonesToMarkers(by);
     const zfiles = z.files; closeSheet(); freeZones(); S.screen = 'editor';
     applyRecipeText(markers, 'photo', zfiles);
