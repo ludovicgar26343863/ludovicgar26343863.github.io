@@ -350,7 +350,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.37';
+const APP_VERSION = '1.38';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -524,7 +524,7 @@ const words = t => norm(t).replace(/[^a-z0-9œæ' ]/g, ' ').split(/[\s']+/).filt
 function stepIngr(r, st){
   if (st.ingredients.length) return st.ingredients;
   const inStep = keyWords(st.instruction);
-  return r.ingredients.filter(x => specKw(shopItem(x, 1).name).some(k => inStep.some(w => wmatch(w, k))));
+  return r.ingredients.filter(x => { const nm = shopItem(x, 1).name; return specKw(nm).some(k => inStep.some(w => wmatch(w, k))) && !adjConflict(nm, st.instruction); });
 }
 const allIngr = r => { const seen = new Set(), out = []; [...r.ingredients, ...r.etapes.flatMap(e => e.ingredients)].forEach(x => { const t = (x || '').trim(); if (t && !seen.has(norm(t))) { seen.add(norm(t)); out.push(t); } }); return out; };
 function stepMat(r, st){
@@ -760,7 +760,10 @@ function updMic(){ const b = $('#mic'); if (!b) return; b.classList.toggle('on',
 /* ---------- Compréhension des commandes vocales ---------- */
 const NUMW = { un:1, une:1, deux:2, trois:3, quatre:4, cinq:5, six:6, sept:7, huit:8, neuf:9, dix:10, quinze:15, vingt:20, trente:30 };
 function cmdNorm(raw){
-  return norm(raw).replace(/[.,!?;:«»"()]/g, ' ').replace(/\b(un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|quinze|vingt|trente)\b/g, w => String(NUMW[w])).replace(/\s+/g, ' ').trim();
+  return norm(raw).replace(/[.,!?;:«»"()]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function numify(n){
+  return n.replace(/\b(un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|quinze|vingt|trente)\b(?=\s+(minutes?|min|portions?|personnes?|parts?|pieces?))/g, w => String(NUMW[w]));
 }
 const INTENTS = [
   { id:'endRecipe', label:'Terminer la recette', re:[/termine(r|z)? (la |cette )?recette/, /fin de (la )?recette/, /recette (est )?(terminee|finie)/] },
@@ -772,12 +775,23 @@ const INTENTS = [
   { id:'add', label:'Ajouter du temps', re:[/(ajoute|rajoute|remets?|encore|plus|prolonge)\s*(de )?(\d+)?\s*(minutes?|min)\b/, /(\d+) minutes? de plus/] },
   { id:'tpause', label:'Pause du minuteur', re:[/\bpause\b/, /arrete (le )?(minuteur|chrono)/, /stop (le )?(minuteur|chrono)/] },
   { id:'start', label:'Démarrer le minuteur', re:[/\b(lance|lancer|demarre|demarrer|commence|commencer|declenche)\b/, /\btop\b/, /\bgo\b/, /c'est parti/, /\breprends?\b/, /\breprendre\b/, /\bcontinue\b/] },
-  { id:'notes', label:'Lire les notes', re:[/(lis|lire|mes|les) notes?/, /qu'est-ce que j'ai note/] },
-  { id:'note', label:'Dicter une note', re:[/^note\b/, /prend(s|re)? (une )?note/, /ajoute (une )?note/, /nouvelle note/, /^noter\b/] },
+  { id:'notes', label:'Lire les notes', re:[/(lis|lire|relis|relire|lit)\b.*\bnotes?\b/, /\b(mes|les) notes\b/, /qu'est-ce que j'ai note/, /il y a (une|des) notes?/] },
+  { id:'note', label:'Dicter une note', re:[/^notes?\b/, /\bdict(e|er|ee|es|ez)\b/, /prend(s|re)? (une )?note/, /(ajoute|rajoute|ecris|ecrire|enregistre|fais|faire|creer?|nouvelle|une|ma) (une )?note/, /^noter\b/, /\bnote (ca|ceci|que)\b/, /\bmemo\b/] },
   { id:'ingredients', label:'Ingrédients', re:[/ingredient/, /de quoi (j'ai|on a) besoin/, /qu'est-ce qu'il faut/, /quelles? quantites?/, /combien de (grammes|g)\b/] },
   { id:'help', label:'Aide', re:[/\baide\b/, /quelles? commandes?/, /qu'est-ce que (je peux|on peut) dire/, /comment (ca|ça) marche/] },
 ];
-function findIntent(n){ for (const it of INTENTS) if (it.re.some(r => r.test(n))) return it; return null; }
+function findIntent(n){ const n2 = numify(n); for (const it of INTENTS) if (it.re.some(r => r.test(n) || r.test(n2))) return it; return fallbackIntent(n2); }
+/* Si aucune phrase connue : on se repère aux mots clés */
+function fallbackIntent(n){
+  const has = re => re.test(n), by = id => INTENTS.find(x => x.id === id);
+  if (has(/\bnotes?\b/)) return by(has(/\b(lis|lire|relis|lit|mes|les)\b/) ? 'notes' : 'note');
+  if (has(/ingredient|quantite/)) return by('ingredients');
+  if (has(/\b(minuteur|chrono|compte a rebours)\b/)) return by(has(/\b(arrete|stop|pause|bloque)\b/) ? 'tpause' : has(/\b(reste|combien)\b/) ? 'remaining' : 'start');
+  if (has(/\bminutes?\b/) && has(/\b(ajout|rajout|plus|encore|prolong|remet)/)) return by('add');
+  if (has(/\betapes?\b/)) { if (has(/\b(prec|avant|retour|reviens)/)) return by('prev'); if (has(/\b(suiv|termin|fini|prochaine|apres|passe)/)) return by('next'); if (has(/\b(repet|relis|redis|lis)/)) return by('repeat'); }
+  if (has(/\b(combien|reste)\b/) && has(/\b(temps|minutes?|secondes?)\b/)) return by('remaining');
+  return null;
+}
 const echoWords = s => cmdNorm(s).split(' ').filter(w => w.length > 2);
 function isEcho(n){
   if (!lastSaid || Date.now() - lastSaidEnd > 4000 && !isSpeaking()) return false;
@@ -835,7 +849,7 @@ function heard(input){
     if (/^(stop|silence|tais-toi|chut)\b/.test(n) && isSpeaking()) { hush(); setHeard(a, false, 'Silence'); ack(); return; }
     if (isEcho(n) && !findIntent(n)) continue;
     if (c.i < 0) {
-      const pm = n.match(/(\d+)\s*(portions?|personnes?|parts?|pieces?|pers\b)/);
+      const pm = numify(n).match(/(\d+)\s*(portions?|personnes?|parts?|pieces?|pers\b)/);
       if (pm) { hush(); setHeard(a, false, `${pm[1]} portions`); ack(); setPortions(+pm[1]); const est = Math.round(estTotal(c.r) * c.f); return say(`${plural(c.portions, 'portion')}.${est ? ` Temps total estimé : ${fmtSpeech(est)}.` : ''}`, true); }
       if (/commenc|c'est parti|etapes? termin|demarre|\bgo\b|on y va|suivant|allez/.test(n)) { hush(); setHeard(a, false, 'On commence'); ack(); return finishStep(); }
     }
@@ -849,7 +863,7 @@ function heard(input){
       case 'prev': return prevStep();
       case 'repeat': return repeatStep();
       case 'remaining': return sayRemaining();
-      case 'add': { const m = n.match(/(\d+)\s*(minutes?|min)/); const k = m ? Math.min(60, +m[1]) : 1; for (let x = 0; x < k; x++) tAdd(); return say(`${plural(k, 'minute')} de plus.`, true); }
+      case 'add': { const m = numify(n).match(/(\d+)\s*(minutes?|min)/); const k = m ? Math.min(60, +m[1]) : 1; for (let x = 0; x < k; x++) tAdd(); return say(`${plural(k, 'minute')} de plus.`, true); }
       case 'tpause': tPause(); return say('Minuteur en pause.', true);
       case 'start': return tStart();
       case 'notes': return readNotes();
@@ -1218,6 +1232,12 @@ function updUnitPrice(){
 const GENERIC = new Set(['blanc', 'jaune', 'feuille', 'morceau', 'tranche', 'filet', 'grain', 'zeste', 'fine', 'entier', 'gro', 'frai', 'chaud', 'froid']);
 const specKw = name => { const k = keyWords(name); const s = k.filter(w => !GENERIC.has(w)); return s.length ? s : k; };
 const TIMEW = /^(heures?|h|minutes?|min|mn|secondes?|sec|s|fois|jours?|nuits?|cm|mm|degr[ée]s?|personnes?|portions?|parts?|ans?)$/i;
+const ADJG = [['chaud', 'froid', 'tiede', 'bouillant', 'glace'], ['blanc', 'noir', 'rouge', 'vert', 'jaune', 'brun', 'violet'], ['frai', 'sec', 'seche', 'surgele']];
+function adjConflict(name, text){
+  const tag = ws => ws.map(w => { for (const g of ADJG) { const k = g.find(a => w.startsWith(a)); if (k) return [g, k]; } return null; }).filter(Boolean);
+  const a = tag(keyWords(name)), b = tag(keyWords(text));
+  return a.some(([g, k]) => b.some(([g2, k2]) => g2 === g && k2 !== k) && !b.some(([g2, k2]) => g2 === g && k2 === k));
+}
 const STEP_UNITS = 'kg|g|mg|l|cl|ml|dl|cs|cc|c\\.?\\s*(?:à|a)\\s*[sc]\\.?|cuill?[eè]res?(?:\\s+(?:à|a)\\s+(?:soupe|caf[eé]))?|pinc[ée]es?|sachets?|gousses?|tranches?|verres?|tasses?|bottes?|bo[iî]tes?|feuilles?|brins?|pots?|branches?';
 const STOPCUT = /^(et|avec|dans|pour|puis|ou|en|au|aux|sur|à|a|le|la|les|du|un|une|que|qui|jusqu)$/i;
 function recipeQtyMap(r){
@@ -1269,6 +1289,7 @@ function stepRender(st, r, f, si, asHtml){
       if (ops.some(o => ws[k].at < o.end && ws[k].end > o.at)) return;
       const nameKw = keyWords(e.name); let last = k;
       for (let q = k + 1; q < ws.length && q <= k + 3; q++) { if (/^(de|d['’]?)$/i.test(ws[q].w)) continue; if (keyWords(ws[q].w).some(x => nameKw.some(y => wmatch(x, y)))) last = q; else break; }
+      if (adjConflict(e.name, txt.slice(ws[k].at, ws[k].at + 40))) continue;
       const p = splitQty(e.line); if (!p) return;
       const lab = p.unit ? fmtUQ(p.q * f, p.unit) : `${fmtQty(p.q * f)} ${p.rest.split(/\s+/)[0]}`;
       ops.push({ at:ws[last].end, end:ws[last].end, html:` <span class="iq">(${esc(lab)})</span>`, plain:` (${lab})` });
