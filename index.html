@@ -322,6 +322,16 @@ label.btn{cursor:pointer;position:relative}
 a.btn{text-decoration:none;color:inherit}
 .mrow small{display:block}
 
+.pausecard{border-color:var(--herb);border-width:2px}
+
+#heard.ok{color:var(--herb);font-weight:700}
+#heard.miss{color:var(--alert)}
+
+.notebox{display:flex;align-items:flex-start;gap:8px}
+.notebox .ntext{flex:1;min-width:0}
+.notebox .nbtns{display:flex;gap:6px;flex:none}
+.notebox .iconbtn{width:38px;height:38px;font-size:15px}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -340,7 +350,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.34';
+const APP_VERSION = '1.37';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -637,7 +647,7 @@ function beep(f = 880, d = .16, v = .28){
 const ack = () => beep(1320, .07, .1);
 
 const TTS = 'speechSynthesis' in window;
-let speaking = false, speakUntil = 0, frVoice = null;
+let speaking = false, speakUntil = 0, frVoice = null, lastSaid = '', lastSaidEnd = 0;
 function pickVoice(){ const vs = speechSynthesis.getVoices(); frVoice = vs.find(v => /^fr[-_]FR/i.test(v.lang)) || vs.find(v => /^fr/i.test(v.lang)) || null; }
 if (TTS) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 function say(text, force){
@@ -647,8 +657,8 @@ function say(text, force){
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'fr-FR'; if (frVoice) u.voice = frVoice;
     u.onstart = () => { speaking = true; };
-    u.onend = u.onerror = () => { speaking = false; };
-    speaking = true; speakUntil = Date.now() + text.length * 75 + 2000;
+    u.onend = u.onerror = () => { speaking = false; lastSaidEnd = Date.now(); };
+    speaking = true; speakUntil = Date.now() + text.length * 75 + 2000; lastSaid = text; lastSaidEnd = speakUntil;
     speechSynthesis.speak(u);
   } catch (e) {}
 }
@@ -672,8 +682,8 @@ function startVoice(){
   if (!SR) return;
   if (V.rec) { try { V.rec.abort(); } catch (e) {} }
   const rec = new SR();
-  rec.lang = 'fr-FR'; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 1;
-  rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) heard(e.results[i][0].transcript); };
+  rec.lang = 'fr-FR'; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 4;
+  rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) { const r = e.results[i], alts = []; for (let k = 0; k < r.length; k++) alts.push(r[k].transcript); heard(alts); } };
   rec.onerror = e => {
     if (!['not-allowed', 'service-not-allowed', 'audio-capture'].includes(e.error)) return;
     V.on = false; V.err = e.error;
@@ -747,54 +757,110 @@ async function micRetry(){
   setTimeout(() => { if (V.state === 'denied') micHelp(true); else if (V.state === 'on') toast('Micro actif'); }, 1500);
 }
 function updMic(){ const b = $('#mic'); if (!b) return; b.classList.toggle('on', V.state === 'on'); $('#mic-l').textContent = micLabel(); }
-function setHeard(raw, miss){ const el = $('#heard'); if (el) el.textContent = miss ? `« ${raw} » : je n’ai pas compris cette commande.` : `« ${raw} »`; }
-
-function heard(raw){
+/* ---------- Compréhension des commandes vocales ---------- */
+const NUMW = { un:1, une:1, deux:2, trois:3, quatre:4, cinq:5, six:6, sept:7, huit:8, neuf:9, dix:10, quinze:15, vingt:20, trente:30 };
+function cmdNorm(raw){
+  return norm(raw).replace(/[.,!?;:«»"()]/g, ' ').replace(/\b(un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|quinze|vingt|trente)\b/g, w => String(NUMW[w])).replace(/\s+/g, ' ').trim();
+}
+const INTENTS = [
+  { id:'endRecipe', label:'Terminer la recette', re:[/termine(r|z)? (la |cette )?recette/, /fin de (la )?recette/, /recette (est )?(terminee|finie)/] },
+  { id:'pauseRecipe', label:'Mettre la recette en pause', re:[/(pause|en pause).*(recette)/, /(recette).*(en pause)/, /reprendre? plus tard/, /on (reprend|continue|termine) demain/, /on s'arrete la/, /mets? (tout )?en pause/] },
+  { id:'next', label:'Étape suivante', re:[/etapes? (est |sont )?termine/, /termine(e|s)? (l'|cette |l )?etape/, /etape suivante/, /\bsuivante?\b/, /\bc'est fait\b/, /\bj'ai (fini|termine)\b/, /\b(c'est )?(fini|termine)$/, /\bon passe a la suite\b/, /\bla suite\b/, /\bnext\b/] },
+  { id:'prev', label:'Étape précédente', re:[/precedent/, /\bretour\b/, /etape d'avant/, /\breviens?\b/, /en arriere/] },
+  { id:'repeat', label:'Relire l’étape', re:[/repet/, /relis/, /relire/, /redis/, /\bpardon\b/, /j'ai pas (compris|entendu)/, /tu peux redire/] },
+  { id:'remaining', label:'Temps restant', re:[/combien de temps/, /temps restant/, /(il )?reste combien/, /ou en est (le )?(minuteur|chrono)/, /c'est (bientot )?(fini|pret)\s*\?*$/] },
+  { id:'add', label:'Ajouter du temps', re:[/(ajoute|rajoute|remets?|encore|plus|prolonge)\s*(de )?(\d+)?\s*(minutes?|min)\b/, /(\d+) minutes? de plus/] },
+  { id:'tpause', label:'Pause du minuteur', re:[/\bpause\b/, /arrete (le )?(minuteur|chrono)/, /stop (le )?(minuteur|chrono)/] },
+  { id:'start', label:'Démarrer le minuteur', re:[/\b(lance|lancer|demarre|demarrer|commence|commencer|declenche)\b/, /\btop\b/, /\bgo\b/, /c'est parti/, /\breprends?\b/, /\breprendre\b/, /\bcontinue\b/] },
+  { id:'notes', label:'Lire les notes', re:[/(lis|lire|mes|les) notes?/, /qu'est-ce que j'ai note/] },
+  { id:'note', label:'Dicter une note', re:[/^note\b/, /prend(s|re)? (une )?note/, /ajoute (une )?note/, /nouvelle note/, /^noter\b/] },
+  { id:'ingredients', label:'Ingrédients', re:[/ingredient/, /de quoi (j'ai|on a) besoin/, /qu'est-ce qu'il faut/, /quelles? quantites?/, /combien de (grammes|g)\b/] },
+  { id:'help', label:'Aide', re:[/\baide\b/, /quelles? commandes?/, /qu'est-ce que (je peux|on peut) dire/, /comment (ca|ça) marche/] },
+];
+function findIntent(n){ for (const it of INTENTS) if (it.re.some(r => r.test(n))) return it; return null; }
+const echoWords = s => cmdNorm(s).split(' ').filter(w => w.length > 2);
+function isEcho(n){
+  if (!lastSaid || Date.now() - lastSaidEnd > 4000 && !isSpeaking()) return false;
+  const said = new Set(echoWords(lastSaid)), w = n.split(' ').filter(x => x.length > 2);
+  if (w.length < 2) return false;
+  return w.filter(x => said.has(x)).length / w.length >= 0.6;
+}
+function voiceHelp(){
+  sheet(`<h3>Ce que tu peux dire</h3><ul class="gaps" style="color:var(--ink)">
+  <li><b>« Commencer »</b>, <b>« 6 portions »</b> (avant de commencer)</li>
+  <li><b>« Étape terminée »</b>, « suivant », « c'est fait »</li>
+  <li><b>« Précédent »</b>, « retour »</li>
+  <li><b>« Répète »</b>, « relis », « pardon »</li>
+  <li><b>« Démarrer »</b>, « lance le minuteur », « top », « reprends »</li>
+  <li><b>« Pause »</b> (le minuteur), <b>« Combien de temps ? »</b></li>
+  <li><b>« Ajoute 2 minutes »</b>, « encore une minute »</li>
+  <li><b>« Ingrédients »</b>, <b>« Lis mes notes »</b>, <b>« Note »</b> … « fin de note »</li>
+  <li><b>« Stop »</b> ou « OK » pour couper l’alerte</li>
+  <li><b>« Mets la recette en pause »</b>, <b>« Termine la recette »</b></li></ul>
+  <p>Parle normalement après le petit bip ou quand l’application a fini de parler. Tu peux aussi me couper en disant « stop ».</p>
+  <div class="acts"><button class="btn" data-act="close-sheet">Compris</button></div>`);
+  say('Tu peux dire : étape terminée, précédent, répète, démarrer, pause, combien de temps, ajoute deux minutes, ingrédients, note, ou mets la recette en pause.', true);
+}
+function setHeard(raw, miss, action){
+  const el = $('#heard'); if (!el) return;
+  el.textContent = miss ? `« ${raw} » : pas compris. Dis « aide » pour la liste des commandes.` : action ? `« ${raw} » → ${action}` : `« ${raw} »`;
+  el.classList.toggle('miss', !!miss); el.classList.toggle('ok', !!action);
+}
+function heard(input){
   const c = S.cook; if (!c || S.screen !== 'cook') return;
-  const n = norm(raw); if (!n) return;
-  setHeard(raw);
+  const alts = (Array.isArray(input) ? input : [input]).map(x => String(x || '').trim()).filter(Boolean);
+  if (!alts.length) return;
+  const raw = alts[0], n0 = cmdNorm(raw);
+  // Dictée d'une note : tout le texte est gardé
   if (c.note && c.note.mode === 'listen') {
-    const stop = /fin de (la )?note/.test(n);
+    setHeard(raw);
+    const stop = /fin de (la )?note/.test(n0);
     const part = raw.replace(/fin de (la )?note.*$/i, '').trim();
     if (part) c.note.text = (c.note.text + ' ' + part).trim();
     if (stop) return endNoteListen();
     renderNote(); armNoteSilence(); return;
   }
-  if (c.note && c.note.mode === 'review') {
-    if (/\b(ok|oui|garde|valide)\b/.test(n)) { ack(); return keepNote(); }
-    if (/annul|supprim|efface/.test(n)) { ack(); return cancelNote(); }
+  // On essaie chaque variante entendue jusqu'à trouver une commande
+  for (const a of alts) {
+    const n = cmdNorm(a);
+    if (c.note && c.note.mode === 'review') {
+      if (/\b(ok|oui|garde|valide|c'est bon)\b/.test(n)) { setHeard(a, false, 'Note gardée'); ack(); return keepNote(); }
+      if (/annul|supprim|efface/.test(n)) { setHeard(a, false, 'Note annulée'); ack(); return cancelNote(); }
+    }
+    if (c.confirmEnd && Date.now() < c.confirmEnd) {
+      if (/\b(oui|ok|confirme|vas-y)\b/.test(n)) { c.confirmEnd = 0; setHeard(a, false, 'Recette terminée'); ack(); return endCook(); }
+      if (/\bnon\b/.test(n)) { c.confirmEnd = 0; setHeard(a, false, 'On continue'); return say('D’accord, on continue.', true); }
+    }
+    if (c.alarm && /\b(stop|ok|arrete|arreter|c'est bon|silence|coupe|chut)\b/.test(n)) { setHeard(a, false, 'Alerte coupée'); ack(); return stopAlarm(); }
+    if (/^(stop|silence|tais-toi|chut)\b/.test(n) && isSpeaking()) { hush(); setHeard(a, false, 'Silence'); ack(); return; }
+    if (isEcho(n) && !findIntent(n)) continue;
+    if (c.i < 0) {
+      const pm = n.match(/(\d+)\s*(portions?|personnes?|parts?|pieces?|pers\b)/);
+      if (pm) { hush(); setHeard(a, false, `${pm[1]} portions`); ack(); setPortions(+pm[1]); const est = Math.round(estTotal(c.r) * c.f); return say(`${plural(c.portions, 'portion')}.${est ? ` Temps total estimé : ${fmtSpeech(est)}.` : ''}`, true); }
+      if (/commenc|c'est parti|etapes? termin|demarre|\bgo\b|on y va|suivant|allez/.test(n)) { hush(); setHeard(a, false, 'On commence'); ack(); return finishStep(); }
+    }
+    const it = findIntent(n);
+    if (!it) continue;
+    hush(); setHeard(a, false, it.label); ack();
+    switch (it.id) {
+      case 'endRecipe': c.confirmEnd = Date.now() + 8000; return say('Terminer la recette ? Dis oui pour confirmer.', true);
+      case 'pauseRecipe': return pauseCook();
+      case 'next': return finishStep();
+      case 'prev': return prevStep();
+      case 'repeat': return repeatStep();
+      case 'remaining': return sayRemaining();
+      case 'add': { const m = n.match(/(\d+)\s*(minutes?|min)/); const k = m ? Math.min(60, +m[1]) : 1; for (let x = 0; x < k; x++) tAdd(); return say(`${plural(k, 'minute')} de plus.`, true); }
+      case 'tpause': tPause(); return say('Minuteur en pause.', true);
+      case 'start': return tStart();
+      case 'notes': return readNotes();
+      case 'note': return startNote();
+      case 'ingredients': return readIngredients();
+      case 'help': return voiceHelp();
+    }
   }
-  if (c.confirmEnd && Date.now() < c.confirmEnd) {
-    if (/\boui\b/.test(n)) { c.confirmEnd = 0; ack(); return endCook(); }
-    if (/\bnon\b/.test(n)) { c.confirmEnd = 0; return say('D’accord, on continue.', true); }
-  }
-  if (c.alarm && /\b(stop|ok|arrete|arreter|c'est bon)\b/.test(n)) { ack(); return stopAlarm(); }
-  if (isSpeaking()) {
-    if (/etape termin/.test(n)) { hush(); ack(); return finishStep(); }
-    if (/\bstop\b|silence|tais-toi/.test(n)) { hush(); ack(); }
-    return;
-  }
-  if (c.i < 0) {
-    const pm = n.match(/(\d+)\s*(portion|personne|part)/);
-    if (pm) { ack(); setPortions(+pm[1]); const est = Math.round(estTotal(c.r) * c.f); return say(`${plural(c.portions, 'portion')}.${est ? ` Temps total estimé : ${fmtSpeech(est)}.` : ''}`, true); }
-  }
-  if (c.i < 0 && /commenc|c'est parti|etape termin|demarre/.test(n)) { ack(); return finishStep(); }
-  const cmds = [
-    [/termine(r)? la recette|fin de la recette/, () => { c.confirmEnd = Date.now() + 8000; say('Terminer la recette ? Dis oui pour confirmer.', true); }],
-    [/etape termin|etape finie/, finishStep],
-    [/precedent|retour|etape d'avant/, prevStep],
-    [/repete|relis|redis/, repeatStep],
-    [/combien de temps|temps restant|il reste combien/, sayRemaining],
-    [/ajoute une minute|une minute de plus|plus une minute/, tAdd],
-    [/lance le minuteur|lance le chrono|demarre|\btop\b/, () => tStart()],
-    [/reprend/, () => tStart()],
-    [/\bpause\b/, tPause],
-    [/mes notes|les notes|lis la note/, readNotes],
-    [/^note\b|prends une note|ajoute une note|nouvelle note/, startNote],
-    [/ingredient/, readIngredients],
-  ];
-  for (const [re, fn] of cmds) if (re.test(n)) { ack(); fn(); return; }
+  if (isEcho(n0)) return;
   setHeard(raw, true);
+  beep(440, .12, .08);
 }
 
 /* ---------- Mode cuisson ---------- */
@@ -827,6 +893,7 @@ function goStep(i, auto){
   if (S.settings.lireNotes && st.notes.length) text += `. Note : ${st.notes.join('. ')}`;
   say(text);
   if (auto && S.settings.autoMinuteur) tStart(true);
+  saveSession(false);
 }
 function finishStep(){
   const c = S.cook; if (!c) return;
@@ -843,7 +910,7 @@ function prevStep(){
   goStep(c.i - 1);
 }
 function endCook(){
-  const c = S.cook; stopAlarm(); cancelNote(true); stopVoice(); keepAwake(false);
+  const c = S.cook; dropSession(c.rid); stopAlarm(); cancelNote(true); stopVoice(); keepAwake(false);
   c.t = null; c.matRes = recordMat(); S.screen = 'recap'; render(); window.scrollTo(0, 0);
   say('Recette terminée. Bon appétit !');
 }
@@ -892,9 +959,60 @@ function matEstText(){
   if (!any || !est) return '';
   return `Avec ce matériel, compte plutôt ${fmtDur(Math.max(60, Math.round((est + g) / 10) * 10))} (écart observé : ${g < 0 ? '−' : '+'}${fmtDur(Math.abs(Math.round(g)))}).`;
 }
+/* ---------- Pause d'une recette et reprise plus tard ---------- */
+const SESKEY = 'pasapas:sessions';
+function saveSession(paused){
+  const c = S.cook; if (!c || c.i < 0 || S.screen !== 'cook') return;
+  const now = Date.now(), t = c.t ? { ...c.t, remaining:c.t.running ? Math.max(0, (c.t.endAt - now) / 1000) : c.t.remaining, running:false, endAt:0 } : null;
+  const all = load(SESKEY, {});
+  all[c.rid] = { rid:c.rid, titre:c.r.titre, i:c.i, n:c.r.etapes.length, portions:c.portions, base:c.base, f:c.f, mat:c.mat, results:c.results, stepElapsed:now - c.stepStart, workElapsed:c.workStart ? now - c.workStart : null, t, paused:!!paused, savedAt:new Date().toISOString() };
+  store(SESKEY, all);
+}
+function dropSession(rid){ const all = load(SESKEY, {}); delete all[rid]; store(SESKEY, all); }
+function pauseCook(){
+  if (!S.cook || S.cook.i < 0) return;
+  saveSession(true);
+  stopAlarm(); cancelNote(true); stopVoice(); keepAwake(false); hush();
+  S.cook = null; S.screen = 'home'; render(); window.scrollTo(0, 0);
+  toast('Recette en pause : reprends-la depuis l’accueil');
+}
+function resumeCook(rid){
+  const s = load(SESKEY, {})[rid], r = find(rid);
+  if (!s || !r || !r.etapes.length) { dropSession(rid); render(); return; }
+  ensureAudio();
+  const now = Date.now(), i = Math.min(s.i, r.etapes.length - 1);
+  S.cook = { rid, r, i, t:s.t ? { ...s.t, running:false, endAt:0 } : null, stepStart:now - (s.stepElapsed || 0), workStart:s.workElapsed != null ? now - s.workElapsed : null, results:s.results || [], alarm:false, note:null, confirmEnd:0, base:s.base || r.portions || 1, portions:s.portions || r.portions || 1, f:s.f || 1, mats:allMat(r), mat:s.mat || {}, matRes:[] };
+  S.screen = 'cook'; render(); window.scrollTo(0, 0); keepAwake(true);
+  if (SR) { if (V.state === 'denied') { V.state = 'off'; V.err = null; } startVoice(); }
+  saveSession(false);
+  say(`On reprend à l’étape ${i + 1}. ${stepRender(r.etapes[i], r, S.cook.f, i, false)}`);
+}
+async function openCook(id){
+  const s = load(SESKEY, {})[id];
+  if (s && find(id)) {
+    const how = await ask(`Reprendre « ${s.titre} » ?`, `${s.paused ? 'Mise en pause' : 'Interrompue'} à l’étape ${s.i + 1} sur ${s.n || '?'}, le ${fmtWhen(s.savedAt)}.`, [{ label:'Reprendre où j’en étais', value:'resume', kind:'primary' }, { label:'Recommencer du début', value:'restart' }, { label:'Annuler', value:null }]);
+    if (!how) return;
+    if (how === 'resume') return resumeCook(id);
+    dropSession(id);
+  }
+  startCook(id);
+}
+const fmtWhen = iso => { const d = new Date(iso); return isNaN(d) ? '' : `${d.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' })} à ${d.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })}`; };
+function sessionsHtml(){
+  const all = Object.values(load(SESKEY, {})).filter(s => find(s.rid));
+  if (!all.length) return '';
+  return all.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt))).map(s => `<div class="mrow pausecard"><div class="ohead"><b>${esc(s.titre)}</b><span class="badge">${s.paused ? 'en pause' : 'interrompue'}</span></div>
+    <small>Étape ${s.i + 1} sur ${s.n || '?'}, ${pcs(s.portions || 1)}, depuis le ${fmtWhen(s.savedAt)}</small>
+    <div class="mbtns"><button class="btn mini primary" data-act="sess-resume" data-id="${s.rid}">Reprendre</button><button class="btn mini" data-act="sess-drop" data-id="${s.rid}">Abandonner</button></div></div>`).join('');
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S.cook && S.screen === 'cook') saveSession(false); });
 async function quitCook(){
-  const ok = await ask('Quitter la recette ?', 'Les étapes déjà terminées gardent leur temps réel.', [{ label:'Quitter', value:true, kind:'danger' }, { label:'Continuer la cuisson', value:false }]);
-  if (!ok) return;
+  const c = S.cook;
+  const opts = c && c.i >= 0 ? [{ label:'Mettre en pause pour plus tard', value:'pause', kind:'primary' }, { label:'Abandonner la recette', value:'quit', kind:'danger' }, { label:'Continuer la cuisson', value:false }] : [{ label:'Quitter', value:'quit', kind:'danger' }, { label:'Continuer', value:false }];
+  const how = await ask('Quitter la recette ?', c && c.i >= 0 ? 'En pause, tu reprendras plus tard à cette étape, avec le minuteur et le chrono là où ils en étaient.' : '', opts);
+  if (!how) return;
+  if (how === 'pause') return pauseCook();
+  if (c) dropSession(c.rid);
   stopAlarm(); cancelNote(true); stopVoice(); keepAwake(false); hush();
   S.cook = null; S.screen = 'home'; render();
 }
@@ -1171,6 +1289,7 @@ function vHome(){
   const n = S.recipes.length;
   const last = load(BKEY, null), old = !last || (Date.now() - new Date(last).getTime()) > 30 * 864e5;
   return `
+  ${sessionsHtml()}
   <button class="choice launch" data-act="go-list"><strong>Lancer une recette</strong><span>Choisir parmi ${plural(n, 'recette')}</span></button>
   <button class="choice create" data-act="go-manage"><strong>Gestion des recettes</strong><span>Créer, modifier ou supprimer une recette</span></button>
   <button class="choice" data-act="go-shop"><strong>Courses</strong><span>La liste des ingrédients à acheter, envoyée vers Notes</span></button>
@@ -1283,7 +1402,7 @@ function vEditor(){
 }
 function vCook(){
   const c = S.cook, r = c.r, n = r.etapes.length;
-  const top = `<div class="cook-top"><button class="btn ghost" data-act="quit">‹ Quitter</button><span class="sp"></span><button id="mic" class="mic" data-act="mic"><span class="dot"></span><span id="mic-l">${micLabel()}</span></button></div><p id="heard" class="heard" aria-live="polite"></p>`;
+  const top = `<div class="cook-top"><button class="btn ghost" data-act="quit">‹ Quitter</button>${c.i >= 0 ? '<button class="btn ghost" data-act="cook-pause" aria-label="Mettre la recette en pause">⏸ Pause</button>' : ''}<span class="sp"></span><button id="mic" class="mic" data-act="mic"><span class="dot"></span><span id="mic-l">${micLabel()}</span></button></div><p id="heard" class="heard" aria-live="polite"></p>`;
   if (c.i < 0) {
     const est = Math.round(estTotal(r) * c.f);
     const ratio = c.f > 1 ? `multipliés par ${fmtQty(c.f)}` : `divisés par ${fmtQty(1 / c.f)}`;
@@ -1312,7 +1431,7 @@ function vCook(){
   <p class="instr">${stepRender(st, r, c.f, c.i, true)}</p>
   ${(si => si.length ? `<div class="chips"><span class="chiplab">Ingrédients</span>${si.map(x => `<span class="chip">${esc(scaleIngr(x, c.f))}</span>`).join('')}</div>` : '')(stepIngr(r, st))}
   ${(sm => sm.length ? `<div class="chips"><span class="chiplab">Matériel</span>${sm.map(x => { const key = (c.mats || []).find(m => norm(m) === norm(x)); const v = key ? c.mat[key] : ''; return `<span class="chip tool">${esc(x)}${v ? ` : ${esc(v)}` : ''}</span>`; }).join('')}</div>` : '')(stepMat(r, st))}
-  ${st.notes.map(x => `<div class="notebox">${esc(x)}</div>`).join('')}
+  ${st.notes.map((x, k) => `<div class="notebox"><span class="ntext">${esc(x)}</span><span class="nbtns"><button class="iconbtn" data-act="cnote-edit" data-n="${k}" aria-label="Modifier la note">✎</button><button class="iconbtn" data-act="cnote-del" data-n="${k}" aria-label="Supprimer la note">✕</button></span></div>`).join('')}
   ${timer}
   ${st.tempsReels.length ? `<p class="past">Les dernières fois : ${st.tempsReels.map(fmtDur).join(', ')}</p>` : ''}
   <div class="row-btns"><button class="btn mini" data-act="note">${SR && V.state === 'on' ? 'Dicter une note' : 'Ajouter une note'}</button><button class="btn mini" data-act="repeat">Relire l’étape</button>${(r.photos || []).length ? `<button class="btn mini" data-act="photo-view" data-id="${esc(r.photos[0])}">Recette d’origine</button>` : ''}</div>
@@ -1568,7 +1687,14 @@ document.addEventListener('click', async e => {
     case 'shop-save': exportText('liste-de-courses.txt', S.shopText); break;
     case 'import': fileInput.click(); break;
     case 'export-template': exportText('modele.recette.txt', TEMPLATE); break;
-    case 'cook': startCook(id); break;
+    case 'cook': openCook(id); break;
+    case 'cook-pause': pauseCook(); break;
+    case 'cnote-edit': { const st = S.cook && S.cook.r.etapes[S.cook.i]; if (!st || st.notes[k] == null) break; sheet(`<h3>Modifier la note</h3><textarea id="cn-text" rows="4">${esc(st.notes[k])}</textarea><div class="acts"><button class="btn primary" data-act="cnote-save" data-n="${k}">Enregistrer</button>${SR ? `<button class="btn" data-act="cnote-dict" data-n="${k}">Redicter la note</button>` : ''}<button class="btn danger" data-act="cnote-del" data-n="${k}">Supprimer la note</button><button class="btn" data-act="close-sheet">Annuler</button></div>`); break; }
+    case 'cnote-save': { const st = S.cook && S.cook.r.etapes[S.cook.i]; if (!st || st.notes[k] == null) break; const tx = (sheetVals['cn-text'] || '').trim(); if (tx) st.notes[k] = tx; else st.notes.splice(k, 1); persist(); render(); toast(tx ? 'Note modifiée' : 'Note supprimée'); break; }
+    case 'cnote-dict': { const st = S.cook && S.cook.r.etapes[S.cook.i]; if (!st || st.notes[k] == null) break; st.notes.splice(k, 1); persist(); render(); startNote(); break; }
+    case 'cnote-del': { const st = S.cook && S.cook.r.etapes[S.cook.i]; if (!st || st.notes[k] == null) break; const ok = await ask('Supprimer cette note ?', st.notes[k], [{ label:'Supprimer', value:true, kind:'danger' }, { label:'Garder', value:false }]); if (ok) { st.notes.splice(k, 1); persist(); render(); toast('Note supprimée'); } break; }
+    case 'sess-resume': resumeCook(id); break;
+    case 'sess-drop': { const ok = await ask('Abandonner cette recette en cours ?', 'Les étapes déjà terminées gardent leur temps réel.', [{ label:'Abandonner', value:true, kind:'danger' }, { label:'Garder', value:false }]); if (ok) { dropSession(id); render(); } break; }
     case 'menu': recipeMenu(id); break;
     case 'edit': openEditor(id); break;
     case 'export': { const r = find(id); if (r) exportText(fileName(r), serialize(r)); break; }
