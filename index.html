@@ -341,6 +341,14 @@ a.btn{text-decoration:none;color:inherit}
 .ototal b{font-family:var(--f-head);font-size:20px}
 .olt{color:var(--herb)!important;font-weight:700}
 
+.ptab{width:100%;border-collapse:collapse;font-size:15px}
+.ptab td{padding:6px 0;border-bottom:1px dashed var(--line);vertical-align:top}
+.ptab td:last-child{text-align:right;white-space:nowrap;padding-left:10px;font-variant-numeric:tabular-nums}
+.ptab td small{display:inline;color:var(--muted);font-size:13px}
+.ptab tr.tot td{border-bottom:none;font-size:17px;font-weight:700;padding-top:9px}
+.pos{color:#2e9e5a}
+.neg{color:var(--alert)}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -359,7 +367,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.42';
+const APP_VERSION = '1.43';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -638,7 +646,7 @@ Temps : 2 min
 /* ---------- État ---------- */
 const S = {
   recipes: [],
-  settings: Object.assign({ lire:true, autoMinuteur:true, lireNotes:false }, load(SKEY, {})),
+  settings: Object.assign({ lire:true, autoMinuteur:true, lireNotes:false, smic:12.31, forfaitH:3 }, load(SKEY, {})),
   screen:'home', q:'', draft:null, tab:'form', editErr:'', from:'home', cook:null, shop:{ sel:{}, skip:{} }, shopText:'', prices:[], ticket:null
 };
 function persist(){
@@ -949,7 +957,9 @@ function prevStep(){
   goStep(c.i - 1);
 }
 function endCook(){
-  const c = S.cook; dropSession(c.rid); stopAlarm(); cancelNote(true); stopVoice(); keepAwake(false);
+  const c = S.cook; dropSession(c.rid);
+  { const duree = (c.results || []).reduce((a, x) => a + (x || 0), 0); if (duree > 0) { S.cooks = S.cooks || []; S.cooks.push({ id:'k-' + uid(), rid:c.rid, titre:c.r.titre, portions:c.portions, fin:new Date().toISOString(), duree }); saveCooks(); } }
+  stopAlarm(); cancelNote(true); stopVoice(); keepAwake(false);
   c.t = null; c.matRes = recordMat(); S.screen = 'recap'; render(); window.scrollTo(0, 0);
   say('Recette terminée. Bon appétit !');
 }
@@ -1386,6 +1396,9 @@ function vSettings(){
   <div class="row-btns"><button class="btn primary" data-act="gem-save" style="flex:1">Enregistrer la clé</button><button class="btn" data-act="gem-test" style="flex:1" ${geminiKey() ? '' : 'disabled'}>Tester</button>${geminiKey() ? '<button class="btn danger" data-act="gem-del">Retirer</button>' : ''}</div>
   <p class="hint">La clé reste sur ce téléphone et n’est envoyée qu’à Google. En version gratuite, Google peut utiliser les images envoyées pour améliorer ses services : n’y mets pas de document personnel.</p>
   <h3 class="sub">Stockage</h3><div class="totals"><span>${KV.ready ? 'Base de données du téléphone' : 'Stockage simple (ancien)'}</span><b>${fmtSize(storageBytes())}</b></div><p class="hint" style="margin-top:0">${KV.ready ? 'Recettes, prix, clients, commandes et réglages. Pas de limite pratique : la place disponible se compte en centaines de Mo.' : 'La base de données n’a pas pu s’ouvrir : l’application utilise l’ancien stockage, limité à 5 Mo.'}</p>
+  <h3 class="sub">Rentabilité</h3>
+  <div class="tgrid" style="grid-template-columns:1fr 1fr"><label class="lbl">Taux horaire (€)<input data-setnum="smic" inputmode="decimal" value="${String(S.settings.smic ?? 12.31).replace('.', ',')}"></label><label class="lbl">Forfait (heures)<input data-setnum="forfaitH" inputmode="decimal" value="${String(S.settings.forfaitH ?? 3).replace('.', ',')}"></label></div>
+  <p class="hint">Par défaut : SMIC horaire brut depuis le 1er juin 2026 (12,31 €) et 3 h de forfait par livraison groupée (courses, préparation, livraison).</p>
   <h3 class="sub">Micro et voix</h3>
   <p class="hint" style="margin-top:0">Si la commande vocale ne marche pas, lance ce test : il vérifie chaque maillon (autorisation, micro, reconnaissance) et indique celui qui bloque.</p>
   <div class="stack"><button class="btn" data-act="mic-test">Tester le micro</button></div>
@@ -1599,7 +1612,7 @@ async function sendShop(){
   sheet(`<h3>Liste de courses</h3><p>Le partage direct vers Notes n’est pas disponible dans cette vue. Copie la liste et colle-la dans une nouvelle note, ou enregistre-la en fichier.</p><textarea class="raw" readonly>${esc(text)}</textarea><div class="acts"><button class="btn primary" data-act="copy">Copier la liste</button><button class="btn" data-act="shop-save">Enregistrer en fichier .txt</button><button class="btn" data-act="close-sheet">Fermer</button></div>`);
 }
 function render(){
-  const v = { home:vHome, list:vList, editor:vEditor, cook:vCook, recap:vRecap, shop:vShop, manage:vManage, prices:vPrices, ticket:vTicket, zones:vZones, settings:vSettings, clients:vClients, clientEdit:vClientEdit, orders:vOrders, orderEdit:vOrderEdit, history:vHistory }[S.screen];
+  const v = { home:vHome, list:vList, editor:vEditor, cook:vCook, recap:vRecap, shop:vShop, manage:vManage, prices:vPrices, ticket:vTicket, zones:vZones, settings:vSettings, clients:vClients, clientEdit:vClientEdit, orders:vOrders, orderEdit:vOrderEdit, history:vHistory, profit:vProfit }[S.screen];
   app.innerHTML = v();
   document.body.dataset.screen = S.screen;
   if (S.screen === 'cook') updMic();
@@ -1761,6 +1774,7 @@ document.addEventListener('click', async e => {
     case 'tk-cancel': S.ticket = null; S.screen = 'prices'; render(); break;
     case 'go-clients': S.screen = 'clients'; render(); window.scrollTo(0, 0); break;
     case 'go-orders': S.screen = 'orders'; render(); window.scrollTo(0, 0); break;
+    case 'go-profit': S.screen = 'profit'; render(); window.scrollTo(0, 0); break;
     case 'go-history': S.screen = 'history'; render(); window.scrollTo(0, 0); break;
     case 'client-new': if (b.dataset.from === 'orderEdit') captureOrderDraft(); S.cfrom = b.dataset.from || S.screen; S.cdraft = { id:'c-' + uid() }; S.screen = 'clientEdit'; render(); window.scrollTo(0, 0); break;
     case 'client-edit': { const c = findClient(id); if (!c) break; S.cfrom = S.screen; S.cdraft = { ...c }; S.screen = 'clientEdit'; render(); window.scrollTo(0, 0); break; }
@@ -1924,6 +1938,8 @@ document.addEventListener('input', e => {
   else if (f === 'note') d.etapes[s].notes[k] = t.value;
 });
 document.addEventListener('change', e => {
+  const nk = e.target.dataset && e.target.dataset.setnum;
+  if (nk) { const v = parseFloat(String(e.target.value).replace(',', '.')); S.settings[nk] = isNaN(v) ? 0 : v; store(SKEY, S.settings); toast('Réglage enregistré'); return; }
   const hk = e.target.dataset && e.target.dataset.hist;
   if (hk) { S.hist = S.hist || { client:'', statut:'' }; S.hist[hk] = e.target.value; render(); return; }
   const pk = e.target.dataset && e.target.dataset.por;
@@ -2865,7 +2881,7 @@ async function readZones(){
 /* ---------- Sauvegarde globale ---------- */
 const BKEY = 'pasapas:derniere-sauvegarde';
 function backupText(photos){
-  return JSON.stringify({ photos:photos || {}, format:'pas-a-pas-sauvegarde', version:1, app:APP_VERSION, date:new Date().toISOString(), recettes:S.recipes.map(r => ({ id:r.id, texte:serialize(r), maj:r.maj || 0 })), supprimes:load(TKEY, {}), prix:S.prices, clients:S.clients, commandes:S.orders, materiel:load(MKEY, {}), reglages:S.settings }, null, 1);
+  return JSON.stringify({ photos:photos || {}, format:'pas-a-pas-sauvegarde', version:1, app:APP_VERSION, date:new Date().toISOString(), recettes:S.recipes.map(r => ({ id:r.id, texte:serialize(r), maj:r.maj || 0 })), supprimes:load(TKEY, {}), prix:S.prices, clients:S.clients, commandes:S.orders, cuissons:S.cooks || [], materiel:load(MKEY, {}), reglages:S.settings }, null, 1);
 }
 const backupName = () => `boudines-cook-sauvegarde-${new Date().toISOString().slice(0, 10)}.txt`;
 function markBackup(){ store(BKEY, new Date().toISOString()); if (S.screen === 'settings' || S.screen === 'home') render(); }
@@ -2907,6 +2923,7 @@ function mergeBackup(d){
   S.recipes = pickRec;
   S.clients = pick('client', S.clients, d.clients || [], c => c.id);
   S.orders = pick('commande', S.orders, d.commandes || [], o => o.id);
+  S.cooks = pick('cuisson', S.cooks || [], d.cuissons || [], k => k.id);
   S.prices = pick('prix', S.prices, d.prix || [], p => norm(p.name));
   store(MKEY, Object.assign({}, d.materiel || {}, load(MKEY, {})));
   store(TKEY, tomb);
@@ -2916,7 +2933,7 @@ async function applyReplace(d){
   const recs = [];
   (d.recettes || []).forEach(f => { try { const { recipe } = parse(f.texte); recipe.id = f.id || uid(); recipe.maj = f.maj || Date.now(); recipe._imp = true; recs.push(recipe); } catch (e) {} });
   const imp = a => (Array.isArray(a) ? a : []).map(x => ({ ...x, _imp:true }));
-  S.recipes = recs; S.prices = imp(d.prix); S.clients = imp(d.clients); S.orders = imp(d.commandes);
+  S.recipes = recs; S.prices = imp(d.prix); S.clients = imp(d.clients); S.orders = imp(d.commandes); S.cooks = imp(d.cuissons);
   store(MKEY, d.materiel || {}); store(TKEY, d.supprimes || {});
   if (d.reglages) { S.settings = Object.assign(S.settings, d.reglages); store(SKEY, S.settings); }
   try { for (const k of await IDB.keys()) await IDB.del(k); } catch (e) {}
@@ -2948,7 +2965,7 @@ async function restoreFile(file, mode){
   let st = null;
   if (how === 'replace') await applyReplace(d); else st = mergeBackup(d);
   await restorePhotos(d.photos || {});
-  persist(); savePrices(); saveClients(); saveOrders(); render();
+  persist(); savePrices(); saveClients(); saveOrders(); saveCooks(); render();
   if (st) sheet(`<h3>Fusion terminée</h3><ul class="gaps" style="color:var(--ink)"><li>${plural(st.nouveaux, 'élément')} ${st.nouveaux > 1 ? 'ajoutés' : 'ajouté'}</li><li>${plural(st.maj, 'élément')} ${st.maj > 1 ? 'mis' : 'mis'} à jour (version plus récente)</li><li>${plural(st.suppr, 'élément')} ${st.suppr > 1 ? 'supprimés' : 'supprimé'} (effacés sur l’autre téléphone)</li></ul><p>En cas de souci, Paramétrage → « Points de restauration » permet de revenir à l’état d’avant.</p><div class="acts"><button class="btn" data-act="close-sheet">Compris</button></div>`);
   else toast('Sauvegarde restaurée');
 }
@@ -2959,7 +2976,7 @@ async function restoreSnapshot(id){
   const d = JSON.parse(s.txt);
   try { await makeSnapshot('Avant retour en arrière'); } catch (e) {}
   await applyReplace(d); await restorePhotos(d.photos || {});
-  persist(); savePrices(); saveClients(); saveOrders(); render(); toast('Version restaurée');
+  persist(); savePrices(); saveClients(); saveOrders(); saveCooks(); render(); toast('Version restaurée');
 }
 async function dbInit(){
   try {
@@ -3055,6 +3072,49 @@ try { if (navigator.storage && navigator.storage.persist) navigator.storage.pers
 
 /* ---------- Clients et commandes ---------- */
 const CKEY = 'pasapas:clients', OKEY = 'pasapas:commandes';
+/* ---------- Rentabilité des commandes livrées ---------- */
+const CLKEY = 'pasapas:cuissons';
+const saveCooks = () => stampList(CLKEY, S.cooks, k => k.id, 'cuisson');
+const DAY = 864e5;
+function orderTime(o){ const t = new Date(o.livraison ? o.livraison + 'T12:00:00' : (o.livreeLe || o.date)).getTime(); return isNaN(t) ? null : t; }
+function profitGroups(){
+  const smic = S.settings.smic > 0 ? S.settings.smic : 12.31, fh = S.settings.forfaitH >= 0 ? S.settings.forfaitH : 3;
+  const done = S.orders.filter(o => o.statut === 'livree').map(o => ({ o, t:orderTime(o) })).filter(x => x.t != null).sort((a, b) => a.t - b.t);
+  const groups = [];
+  done.forEach(x => { const g = groups[groups.length - 1]; if (g && x.t - g.start <= 3 * DAY) { g.items.push(x.o); g.end = x.t; } else groups.push({ start:x.t, end:x.t, items:[x.o] }); });
+  const used = new Set();
+  groups.forEach(g => {
+    g.cooks = (S.cooks || []).filter(k => { const t = new Date(k.fin).getTime(); if (used.has(k.id) || isNaN(t) || t < g.start - 3 * DAY || t > g.end + DAY) return false; used.add(k.id); return true; });
+    let ca = 0, dep = 0, miss = 0, estS = 0; const byR = {};
+    g.items.forEach(o => (o.lignes || []).forEach(l => { const r = find(l.rid), q = +l.qte || 0, pu = l.pu > 0 ? l.pu : (r && r.prixVente > 0 ? r.prixVente : 0); ca += pu * q; byR[l.rid] = (byR[l.rid] || 0) + q; }));
+    Object.entries(byR).forEach(([rid, q]) => { const r = find(rid); if (!r) return; const f = q / (r.portions || 1); if (S.prices.length) { const k = recipeCost(r, f); dep += k.total; miss += k.unknown; } else miss += allIngr(r).length; estS += estTotal(r) * f; });
+    const realS = g.cooks.reduce((a, k) => a + (+k.duree || 0), 0);
+    Object.assign(g, { ca, dep, miss, byR, realS, estS, cookS:realS || estS, estimated:!realS, smic, fh });
+    g.h = g.cookS / 3600 + fh; g.mo = g.h * smic; g.rent = ca - dep - g.mo;
+  });
+  return groups.reverse();
+}
+function vProfit(){
+  const gs = profitGroups(), smic = S.settings.smic > 0 ? S.settings.smic : 12.31, fh = S.settings.forfaitH >= 0 ? S.settings.forfaitH : 3;
+  const tot = gs.reduce((a, g) => ({ ca:a.ca + g.ca, dep:a.dep + g.dep, mo:a.mo + g.mo, rent:a.rent + g.rent }), { ca:0, dep:0, mo:0, rent:0 });
+  const titleOf = rid => { const r = find(rid); if (r) return r.titre; const l = S.orders.flatMap(o => o.lignes || []).find(x => x.rid === rid); return (l && l.titre) || 'Recette supprimée'; };
+  const row = (a, b, cls = '') => `<tr class="${cls}"><td>${a}</td><td>${b}</td></tr>`;
+  const money = (v, neg) => `${neg ? '− ' : ''}${fmtEuro(v)}`;
+  const card = g => `<div class="mrow"><div class="ohead"><b>${g.start === g.end || fmtDateFr(new Date(g.start).toISOString().slice(0, 10)) === fmtDateFr(new Date(g.end).toISOString().slice(0, 10)) ? `Livraison du ${fmtDateFr(new Date(g.start).toISOString().slice(0, 10))}` : `Livraisons du ${fmtDateFr(new Date(g.start).toISOString().slice(0, 10))} au ${fmtDateFr(new Date(g.end).toISOString().slice(0, 10))}`}</b><span class="badge">${plural(g.items.length, 'commande')}</span></div>
+    <small>${Object.entries(g.byR).map(([rid, q]) => `${esc(titleOf(rid))} × ${fmtQty(q)}`).join(', ')}</small>
+    <div class="scroll" style="margin:8px 0 0"><table class="ptab">
+    ${row('Total commandes', money(g.ca))}
+    ${row(`Total dépenses${g.miss ? ` <small>(${plural(g.miss, 'ingrédient')} sans prix)</small>` : ''}`, money(g.dep, true))}
+    ${row(`Durée effective de cuisine${g.estimated ? ' <small>(estimée : aucune cuisson enregistrée)</small>' : ` <small>(${plural(g.cooks.length, 'cuisson')})</small>`}`, fmtDur(Math.round(g.cookS)))}
+    ${row(`Main-d’œuvre <small>(${fmtDur(Math.round(g.cookS))} + ${fmtQty(g.fh)} h) × ${fmtEuro(g.smic)}</small>`, money(g.mo, true))}
+    ${row('Rentabilité', `<b class="${g.rent >= 0 ? 'pos' : 'neg'}">${fmtEuro(g.rent)}</b>`, 'tot')}
+    </table></div></div>`;
+  return `<div class="topbar"><button class="btn ghost" data-act="go-history">‹ Historique</button><h2>Rentabilité</h2></div>
+  <p class="hint" style="margin-top:0">Commandes livrées, regroupées quand elles sont à moins de 3 jours d’écart. Rentabilité = total des commandes − dépenses en ingrédients − (durée de cuisine + ${fmtQty(fh)} h) × ${fmtEuro(smic)} de l’heure. Taux et forfait se changent dans Paramétrage.</p>
+  ${gs.length ? `<div class="mrow"><b>Toutes les commandes livrées</b><div class="scroll" style="margin:8px 0 0"><table class="ptab">${row('Total commandes', money(tot.ca))}${row('Total dépenses', money(tot.dep, true))}${row('Main-d’œuvre', money(tot.mo, true))}${row('Rentabilité', `<b class="${tot.rent >= 0 ? 'pos' : 'neg'}">${fmtEuro(tot.rent)}</b>`, 'tot')}</table></div></div>${gs.map(card).join('')}` : '<div class="empty"><p>Aucune commande livrée pour l’instant. Passe une commande en « Livrée » pour voir sa rentabilité.</p></div>'}
+  <p class="hint">La durée effective vient des recettes que tu as cuisinées jusqu’au bout dans l’application, entre 3 jours avant et 1 jour après les livraisons. Sans cuisson enregistrée, elle est estimée d’après les temps prévus des recettes.</p>`;
+}
+
 const saveClients = () => stampList(CKEY, S.clients, c => c.id, 'client'), saveOrders = () => stampList(OKEY, S.orders, o => o.id, 'commande');
 const clientName = c => c ? ([c.prenom, c.nom].filter(x => x && String(x).trim()).join(' ') || 'Client sans nom') : 'Client supprimé';
 const findClient = id => S.clients.find(c => c.id === id);
@@ -3142,6 +3202,7 @@ function vHistory(){
   const cl = [...S.clients].sort((a, b) => clientName(a).localeCompare(clientName(b), 'fr'));
   const tot = list.filter(o => o.statut !== 'annulee').reduce((a, o) => a + (o.lignes || []).reduce((x, l) => x + (+l.qte || 0), 0), 0);
   return `<div class="topbar"><button class="btn ghost" data-act="go-orders">‹ Commandes</button><h2>Historique</h2></div>
+  <div class="row-btns" style="margin-top:0"><button class="btn primary" data-act="go-profit" style="flex:1">Rentabilité</button></div>
   <div class="tgrid" style="grid-template-columns:1fr 1fr"><label class="lbl">Client<select data-hist="client"><option value="">Tous les clients</option>${cl.map(c => `<option value="${c.id}" ${f.client === c.id ? 'selected' : ''}>${esc(clientName(c))}</option>`).join('')}</select></label>
   <label class="lbl">État<select data-hist="statut">${[['', 'Tous'], ['attente', 'En attente'], ['livree', 'Livrées'], ['annulee', 'Annulées']].map(([k, l]) => `<option value="${k}" ${f.statut === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
   <p class="hint">${plural(list.length, 'commande')}, ${pcs(tot)} (hors annulées).</p>
@@ -3165,12 +3226,12 @@ function vClientEdit(){
   <div class="savebar"><button class="btn primary" data-act="client-save">Enregistrer le client</button></div>`;
 }
 
-S.clients = []; S.orders = []; S.prices = [];
+S.clients = []; S.orders = []; S.prices = []; S.cooks = [];
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 (async () => {
   await dbInit();
-  S.settings = Object.assign({ lire:true, autoMinuteur:true, lireNotes:false }, load(SKEY, {}));
-  S.clients = load(CKEY, []); S.orders = load(OKEY, []); S.prices = load(PKEY, []);
+  S.settings = Object.assign({ lire:true, autoMinuteur:true, lireNotes:false, smic:12.31, forfaitH:3 }, load(SKEY, {}));
+  S.clients = load(CKEY, []); S.orders = load(OKEY, []); S.prices = load(PKEY, []); S.cooks = load(CLKEY, []);
   loadRecipes();
   render();
   initPhoto();
