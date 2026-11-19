@@ -359,7 +359,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.40';
+const APP_VERSION = '1.42';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -370,8 +370,17 @@ const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
 
 /* ---------- Stockage local (un texte à marqueurs par recette) ---------- */
 const KEY = 'pasapas:recettes', SKEY = 'pasapas:reglages';
-function load(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
-function store(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+/* ---------- Base de données du téléphone (IndexedDB), avec repli sur l'ancien stockage ---------- */
+const KV = { ready:false, cache:{}, migrated:false };
+const jclone = v => v === undefined ? v : JSON.parse(JSON.stringify(v));
+function load(k, d){
+  if (KV.ready) return k in KV.cache ? jclone(KV.cache[k]) : d;
+  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; }
+}
+function store(k, v){
+  if (KV.ready) { KV.cache[k] = jclone(v); IDBX.kv.put(k, KV.cache[k]).catch(() => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }); return; }
+  try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {}
+}
 
 /* ---------- Durées ---------- */
 function parseDuration(v){
@@ -632,12 +641,17 @@ const S = {
   settings: Object.assign({ lire:true, autoMinuteur:true, lireNotes:false }, load(SKEY, {})),
   screen:'home', q:'', draft:null, tab:'form', editErr:'', from:'home', cook:null, shop:{ sel:{}, skip:{} }, shopText:'', prices:[], ticket:null
 };
-function persist(){ store(KEY, S.recipes.map(r => ({ id:r.id, texte:serialize(r) }))); }
+function persist(){
+  const prev = new Map((load(KEY, []) || []).map(e => [e.id, e])), now = Date.now(), seen = new Set();
+  const out = S.recipes.map(r => { const texte = serialize(r), p = prev.get(r.id); seen.add(r.id); r.maj = p && p.texte === texte ? (p.maj || r.maj || now) : (r._imp ? (r.maj || now) : now); delete r._imp; return { id:r.id, texte, maj:r.maj }; });
+  const tomb = load(TKEY, {}); let ch = false; prev.forEach((p, id) => { if (!seen.has(id)) { tomb['recette:' + id] = now; ch = true; } }); if (ch) store(TKEY, tomb);
+  store(KEY, out);
+}
 function loadRecipes(){
   const raw = load(KEY, null);
   const list = Array.isArray(raw) ? raw : SEED.map(t => ({ id:uid(), texte:t }));
   S.recipes = [];
-  list.forEach(f => { try { const { recipe } = parse(f.texte); recipe.id = f.id || uid(); S.recipes.push(recipe); } catch (e) {} });
+  list.forEach(f => { try { const { recipe } = parse(f.texte); recipe.id = f.id || uid(); recipe.maj = f.maj || 0; S.recipes.push(recipe); } catch (e) {} });
   if (!Array.isArray(raw)) persist();
 }
 const find = id => S.recipes.find(r => r.id === id);
@@ -1192,7 +1206,7 @@ function upsertPrice(p){
   const i = S.prices.findIndex(x => norm(x.name) === norm(p.name));
   if (i >= 0) { const o = S.prices[i]; p.links = [...new Set([...(o.links || []), ...p.links])]; if (!p.libelle) p.libelle = o.libelle || ''; S.prices[i] = p; } else S.prices.push(p);
 }
-const savePrices = () => store(PKEY, S.prices);
+const savePrices = () => stampList(PKEY, S.prices, p => norm(p.name), 'prix');
 const fmtQ = n => String(Math.round(n * 1000) / 1000).replace('.', ',');
 const priceLabel = p => p.perBase == null ? 'Pas encore de prix' : p.base === 'g' ? `${fmtEuro(p.perBase * 1000)} le kg` : p.base === 'ml' ? `${fmtEuro(p.perBase * 1000)} le litre` : `${fmtEuro(p.perBase)} la pièce`;
 const unitTxt = (q, u) => u === 'pièce' ? (q > 1 ? 'pièces' : 'pièce') : u;
@@ -1323,7 +1337,7 @@ function stepRender(st, r, f, si, asHtml){
   return out + (asHtml ? esc(txt.slice(pos)) : txt.slice(pos));
 }
 /* Taille des données enregistrées */
-function storageBytes(){ let n = 0; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('pasapas:')) n += (k.length + (localStorage.getItem(k) || '').length) * 2; } } catch (e) {} return n; }
+function storageBytes(){ if (KV.ready) { try { return JSON.stringify(KV.cache).length * 2; } catch (e) { return 0; } } let n = 0; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('pasapas:')) n += (k.length + (localStorage.getItem(k) || '').length) * 2; } } catch (e) {} return n; }
 const fmtSize = b => b >= 1048576 ? `${(b / 1048576).toFixed(1).replace('.', ',')} Mo` : `${Math.max(1, Math.round(b / 1024))} Ko`;
 
 /* ---------- Écrans ---------- */
@@ -1352,7 +1366,14 @@ function vSettings(){
   <p class="hint" style="margin-top:0">Tes recettes, tes prix et ton matériel sont enregistrés uniquement dans ce téléphone. La sauvegarde les réunit dans un seul fichier, à garder ailleurs (Drive, mail, ordinateur) pour tout retrouver après un changement de téléphone ou un effacement.</p>
   <div class="totals"><span>Dernière sauvegarde</span><b>${last ? fmtDateFr(last.slice(0, 10)) : 'jamais'}</b></div>
   <p class="porhint">À sauvegarder : ${plural(S.recipes.length, 'recette')}, ${np} prix enregistré${np > 1 ? 's' : ''}.</p>
-  <div class="stack" style="margin-top:12px"><button class="btn primary" data-act="backup-save">Enregistrer la sauvegarde</button>${canShare ? '<button class="btn" data-act="backup-share">Envoyer la sauvegarde (Drive, mail…)</button>' : ''}<label class="btn">Restaurer une sauvegarde<input type="file" accept=".txt,.json,text/plain,application/json" data-file="restore" class="vh"></label></div>
+  <h3 class="sub">Échange entre téléphones</h3>
+  <p class="hint" style="margin-top:0">Envoie ta sauvegarde à l’autre téléphone (WhatsApp, Quick Share, mail…). Sur l’autre téléphone, « Recevoir » fusionne en gardant pour chaque recette, client, commande et prix la version la plus récente ; une suppression faite d’un côté est appliquée de l’autre. Faites-le dans les deux sens pour être à jour partout.</p>
+  <div class="stack"><button class="btn primary" data-act="${canShare ? 'backup-share' : 'backup-save'}">Envoyer à l’autre téléphone</button><label class="btn">Recevoir de l’autre téléphone<input type="file" accept=".txt,.json,text/plain,application/json" data-file="restore-merge" class="vh"></label></div>
+  <h3 class="sub">Sauvegarde dans un fichier</h3>
+  <div class="stack"><button class="btn" data-act="backup-save">Enregistrer la sauvegarde</button><label class="btn">Restaurer une sauvegarde (fusionner ou remplacer)<input type="file" accept=".txt,.json,text/plain,application/json" data-file="restore" class="vh"></label></div>
+  <h3 class="sub">Points de restauration</h3>
+  <p class="hint" style="margin-top:0">Avant chaque réception ou restauration, l’application garde une copie complète de ce téléphone pour pouvoir revenir en arrière. Seules les 2 dernières sont conservées, les plus anciennes s’effacent toutes seules.</p>
+  <div id="snaps"><p class="hint">Chargement…</p></div>
   <h3 class="sub">Réglages</h3>
   ${toggle('lire', 'Lire les étapes à voix haute')}
   ${toggle('autoMinuteur', 'Démarrer le chrono à chaque nouvelle étape')}
@@ -1364,7 +1385,7 @@ function vSettings(){
   <label class="lbl">Clé Gemini<input id="gem-key" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…" value="${esc(geminiKey())}"></label>
   <div class="row-btns"><button class="btn primary" data-act="gem-save" style="flex:1">Enregistrer la clé</button><button class="btn" data-act="gem-test" style="flex:1" ${geminiKey() ? '' : 'disabled'}>Tester</button>${geminiKey() ? '<button class="btn danger" data-act="gem-del">Retirer</button>' : ''}</div>
   <p class="hint">La clé reste sur ce téléphone et n’est envoyée qu’à Google. En version gratuite, Google peut utiliser les images envoyées pour améliorer ses services : n’y mets pas de document personnel.</p>
-  ${(b => { const pct = Math.min(100, b / (5 * 1048576) * 100); return `<h3 class="sub">Stockage</h3><div class="totals"><span>Recettes, prix et réglages</span><b>${fmtSize(b)}</b></div><div class="progress" style="margin:10px 0 6px"><i style="width:${Math.max(1, pct)}%"></i></div><p class="hint" style="margin-top:0">${pct < 40 ? `Environ ${Math.round(pct)} % de la place disponible (5 Mo) : il reste largement de quoi faire. Les photos sont rangées à part, sans cette limite.` : `Déjà ${Math.round(pct)} % de la place disponible (5 Mo) : il est temps de passer à une base de données sur le téléphone.`}</p>`; })(storageBytes())}
+  <h3 class="sub">Stockage</h3><div class="totals"><span>${KV.ready ? 'Base de données du téléphone' : 'Stockage simple (ancien)'}</span><b>${fmtSize(storageBytes())}</b></div><p class="hint" style="margin-top:0">${KV.ready ? 'Recettes, prix, clients, commandes et réglages. Pas de limite pratique : la place disponible se compte en centaines de Mo.' : 'La base de données n’a pas pu s’ouvrir : l’application utilise l’ancien stockage, limité à 5 Mo.'}</p>
   <h3 class="sub">Micro et voix</h3>
   <p class="hint" style="margin-top:0">Si la commande vocale ne marche pas, lance ce test : il vérifie chaque maillon (autorisation, micro, reconnaissance) et indique celui qui bloque.</p>
   <div class="stack"><button class="btn" data-act="mic-test">Tester le micro</button></div>
@@ -1493,18 +1514,67 @@ function vRecap(){
   <p class="hint">Chaque temps réel est enregistré dans le fichier de la recette ; seuls les 5 derniers sont gardés par étape.</p>
   <div class="stack"><button class="btn primary" data-act="home">Retour à l’accueil</button><button class="btn" data-act="export" data-id="${r.id}">Exporter le fichier</button></div>`;
 }
+/* Lignes d'ingrédients d'une recette pour les courses : la liste si elle existe, sinon les quantités écrites dans les étapes */
+function stepQtyLines(r){
+  const out = [];
+  (r.etapes || []).forEach(st => {
+    const txt = String(st.instruction || ''), re = new RegExp(`(\\d+(?:[.,]\\d+)?|[½¼¾⅓⅔])\\s*(${STEP_UNITS})?(?![a-zà-ÿ0-9])\\s*(?:de\\s+|d['’]\\s*)?([a-zà-ÿœ'’]+(?:\\s+(?:de\\s+|d['’]\\s*)?[a-zà-ÿœ]+){0,3})`, 'gi');
+    let m;
+    while ((m = re.exec(txt))) {
+      if (/(?:chaque|par|prendre|prends|déposer|dépose|y)\s*$/i.test(txt.slice(Math.max(0, m.index - 16), m.index))) continue;
+      const cut = []; for (const w of m[3].split(/\s+/)) { if (STOPCUT.test(w)) break; cut.push(w); }
+      const name = cut.join(' ').replace(/^(de\s+|d['’]\s*)/i, '').trim();
+      if (!name || TIMEW.test(cut[0] || '')) continue;
+      out.push(`${m[1]}${m[2] ? ' ' + m[2] : ''} de ${name}`);
+    }
+  });
+  return out;
+}
+function shopSource(r){
+  const list = allIngr(r);
+  return list.length ? list : stepQtyLines(r);
+}
+/* Regroupe un même produit : pluriels, préparations (râpé, haché…), « blancs de poulet » = poulet, blanc/jaune d'œuf = œufs */
+const PREP = ['rape', 'hache', 'emince', 'coupe', 'decoupe', 'epluche', 'pele', 'entier', 'cuit', 'cru', 'fondu', 'mixe', 'ecrase', 'concasse', 'frais', 'fraiche', 'fin', 'finement', 'gros', 'grosse', 'petit', 'petite'];
+const TEMPW = ['chaud', 'froid', 'tiede', 'bouillant', 'glace'];
+const MEASURE = /^(cuill?[eè]res?\s+(?:à|a)\s+(?:caf[eé]|soupe)|c\.?\s*(?:à|a)\s*[sc]\.?|pinc[ée]es?|sachets?|gousses?|verres?|tasses?|bo[iî]tes?|bottes?|brins?|pots?)\s+(?:de\s+|d['’]\s*)(.+)$/i;
+function shopGroup(it){
+  let name = it.name, q = it.q, base = it.base;
+  const mm = String(name).match(MEASURE);
+  if (mm && q != null && !base) { base = mm[1].toLowerCase().replace(/^c\.?\s*(?:à|a)\s*s\.?$/, 'c. à soupe').replace(/^c\.?\s*(?:à|a)\s*c\.?$/, 'c. à café'); name = cap(mm[2].trim()); }
+  const n = norm(name).replace(/œ/g, 'oe');
+  if (/\boeufs?\b/.test(n)) {
+    if (q != null && (base === 'g' || base === 'ml')) q = Math.max(1, Math.round(q / (/\bblancs?\b/.test(n) ? 33 : /\bjaunes?\b/.test(n) ? 18 : 55)));
+    else if (q != null && base) q = null;
+    return { key:'oeuf', name:'Œufs', q, base:'', egg:true };
+  }
+  const kw = specKw(name).filter(w => !PREP.some(p => w.startsWith(p)));
+  if (kw.includes('eau') && kw.every(w => w === 'eau' || TEMPW.some(p => w.startsWith(p)))) return null;
+  const key = kw.length ? kw.filter(w => !TEMPW.some(p => w.startsWith(p))).sort().join(' ') || kw.sort().join(' ') : 'x|' + n;
+  return { key, name, q, base };
+}
 function buildShop(){
   const map = new Map(), used = [];
   Object.entries(S.shop.sel).forEach(([id, p]) => {
     const r = find(id); if (!r) return;
     used.push(`${r.titre} (${plural(p, 'portion')})`);
     const f = p / (r.portions || 1);
-    allIngr(r).forEach(x => { const it = shopItem(x, f), cur = map.get(it.key); if (cur) { if (cur.q != null && it.q != null) cur.q += it.q; } else map.set(it.key, it); });
+    shopSource(r).forEach(x => {
+      const g = shopGroup(shopItem(x, f)); if (!g) return;
+      let cur = map.get(g.key);
+      if (!cur) { cur = { key:g.key, name:g.name, egg:!!g.egg, parts:{}, names:new Set() }; map.set(g.key, cur); }
+      cur.names.add(norm(g.name));
+      if (g.q != null) cur.parts[g.base] = (cur.parts[g.base] || 0) + g.q;
+      if (g.name.length < cur.name.length && !g.egg) cur.name = g.name;
+    });
   });
   return { used, items:[...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr')) };
 }
-const shopLabel = it => { const c = itemCost(it); return (it.q == null ? it.name : `${it.name} : ${fmtShopQty(it.q, it.base)}`) + (c != null ? ` (≈ ${fmtEuro(c)})` : ''); };
-const shopTotal = items => { const cs = items.filter(it => !S.shop.skip[it.key]).map(itemCost).filter(x => x != null); return cs.length ? cs.reduce((a, b) => a + b, 0) : null; };
+const shopQtyTxt = it => Object.entries(it.parts).map(([b, q]) => b === '' ? fmtQty(it.egg ? Math.ceil(q - 0.01) : q) : (b === 'g' || b === 'ml') ? fmtShopQty(q, b) : `${fmtQty(q)} ${b}`).join(' + ');
+const shopCost = it => { let tot = 0, any = false; for (const [b, q] of Object.entries(it.parts)) { const c = itemCost({ name:it.name, q:it.egg ? Math.ceil(q - 0.01) : q, base:b }); if (c != null) { tot += c; any = true; } } return any ? tot : null; };
+const shopLabel = it => { const c = shopCost(it), q = shopQtyTxt(it); return (q ? `${it.name} : ${q}` : it.name) + (c != null ? ` (≈ ${fmtEuro(c)})` : ''); };
+const shopTotal = items => { const cs = items.filter(it => !S.shop.skip[it.key]).map(shopCost).filter(x => x != null); return cs.length ? cs.reduce((a, b) => a + b, 0) : null; };
+
 function vShop(){
   const { items } = buildShop();
   const rs = [...S.recipes].sort((a, b) => a.titre.localeCompare(b.titre, 'fr'));
@@ -1533,6 +1603,7 @@ function render(){
   app.innerHTML = v();
   document.body.dataset.screen = S.screen;
   if (S.screen === 'cook') updMic();
+  if (S.screen === 'settings') fillSnaps();
   renderAlarm(); renderNote(); hydratePhotos();
 }
 
@@ -1778,6 +1849,8 @@ document.addEventListener('click', async e => {
     case 'quit': quitCook(); break;
     case 'mic-retry': ensureAudio(); micRetry(); break;
     case 'mic-test': micTest(); break;
+    case 'snap-restore': restoreSnapshot(id); break;
+    case 'snap-del': { const ok = await ask('Supprimer ce point de restauration ?', '', [{ label:'Supprimer', value:true, kind:'danger' }, { label:'Garder', value:false }]); if (ok) { try { await IDBX.snaps.del(id); } catch (e) {} render(); } break; }
     case 'pr-pick': { const lt = load(LKEY, null), it = lt && lt.items && lt.items[+b.dataset.i]; if (!it) break; const set = (id, v) => { const el = $('#' + id); if (el) el.value = v; };
       set('pr-lib', it.libelle); set('pr-prix', String(+it.prix || '').replace('.', ','));
       const prev = S.prices.find(x => norm(x.name) === norm(($('#pr-nom') || {}).value || ''));
@@ -1867,6 +1940,7 @@ document.addEventListener('change', e => {
     else if (fk === 'photo') openZones(files.slice(0, 4));
     else if (fk === 'import') importFiles(files);
     else if (fk === 'restore') restoreFile(files[0]);
+    else if (fk === 'restore-merge') restoreFile(files[0], 'merge');
     return;
   }
   const k = e.target.dataset && e.target.dataset.setting;
@@ -2791,7 +2865,7 @@ async function readZones(){
 /* ---------- Sauvegarde globale ---------- */
 const BKEY = 'pasapas:derniere-sauvegarde';
 function backupText(photos){
-  return JSON.stringify({ photos:photos || {}, format:'pas-a-pas-sauvegarde', version:1, app:APP_VERSION, date:new Date().toISOString(), recettes:S.recipes.map(r => ({ id:r.id, texte:serialize(r) })), prix:S.prices, clients:S.clients, commandes:S.orders, materiel:load(MKEY, {}), reglages:S.settings }, null, 1);
+  return JSON.stringify({ photos:photos || {}, format:'pas-a-pas-sauvegarde', version:1, app:APP_VERSION, date:new Date().toISOString(), recettes:S.recipes.map(r => ({ id:r.id, texte:serialize(r), maj:r.maj || 0 })), supprimes:load(TKEY, {}), prix:S.prices, clients:S.clients, commandes:S.orders, materiel:load(MKEY, {}), reglages:S.settings }, null, 1);
 }
 const backupName = () => `boudines-cook-sauvegarde-${new Date().toISOString().slice(0, 10)}.txt`;
 function markBackup(){ store(BKEY, new Date().toISOString()); if (S.screen === 'settings' || S.screen === 'home') render(); }
@@ -2803,38 +2877,118 @@ async function shareBackup(){
   } catch (e) { if (e && e.name === 'AbortError') return; }
   toast('L’envoi n’est pas disponible ici : utilise « Enregistrer la sauvegarde ».');
 }
-async function restoreFile(file){
+/* ---------- Dates de modification, suppressions et fusion intelligente entre téléphones ---------- */
+const TKEY = 'pasapas:supprimes';
+const sameRec = (a, b) => { const c = o => { const x = { ...o }; delete x.maj; delete x._imp; return JSON.stringify(x); }; return c(a) === c(b); };
+function stampList(key, list, idOf, kind){
+  const prev = new Map((load(key, []) || []).map(x => [idOf(x), x])), now = Date.now(), seen = new Set();
+  list.forEach(x => { const id = idOf(x), p = prev.get(id); seen.add(id); x.maj = p && sameRec(p, x) ? (p.maj || x.maj || now) : (x._imp ? (x.maj || now) : now); delete x._imp; });
+  const tomb = load(TKEY, {}); let ch = false;
+  prev.forEach((p, id) => { if (!seen.has(id)) { tomb[`${kind}:${id}`] = now; ch = true; } });
+  if (ch) store(TKEY, tomb);
+  store(key, list);
+}
+function mergeBackup(d){
+  const tombL = load(TKEY, {}), tomb = { ...(d.supprimes || {}) };
+  Object.entries(tombL).forEach(([k, v]) => { if (!tomb[k] || v > tomb[k]) tomb[k] = v; });
+  const st = { nouveaux:0, maj:0, suppr:0 };
+  const pick = (kind, localArr, remoteArr, idOf) => {
+    const m = new Map(); localArr.forEach(x => m.set(idOf(x), x));
+    remoteArr.forEach(x => { const id = idOf(x), cur = m.get(id); if (!cur) { m.set(id, { ...x, _imp:true }); st.nouveaux++; } else if ((x.maj || 0) > (cur.maj || 0) && !sameRec(cur, x)) { m.set(id, { ...x, _imp:true }); st.maj++; } });
+    return [...m.values()].filter(x => { const t = tomb[`${kind}:${idOf(x)}`]; if (t && (x.maj || 0) < t) { st.suppr++; return false; } return true; });
+  };
+  const remoteRec = [];
+  (d.recettes || []).forEach(f => { try { const { recipe } = parse(f.texte); recipe.id = f.id || uid(); recipe.maj = f.maj || 0; remoteRec.push(recipe); } catch (e) {} });
+  const pickRec = (() => {
+    const m = new Map(); S.recipes.forEach(r => m.set(r.id, r));
+    remoteRec.forEach(r => { const cur = m.get(r.id); if (!cur) { r._imp = true; m.set(r.id, r); st.nouveaux++; } else if ((r.maj || 0) > (cur.maj || 0) && serialize(r) !== serialize(cur)) { r._imp = true; m.set(r.id, r); st.maj++; } });
+    return [...m.values()].filter(r => { const t = tomb['recette:' + r.id]; if (t && (r.maj || 0) < t) { st.suppr++; return false; } return true; });
+  })();
+  S.recipes = pickRec;
+  S.clients = pick('client', S.clients, d.clients || [], c => c.id);
+  S.orders = pick('commande', S.orders, d.commandes || [], o => o.id);
+  S.prices = pick('prix', S.prices, d.prix || [], p => norm(p.name));
+  store(MKEY, Object.assign({}, d.materiel || {}, load(MKEY, {})));
+  store(TKEY, tomb);
+  return st;
+}
+async function applyReplace(d){
+  const recs = [];
+  (d.recettes || []).forEach(f => { try { const { recipe } = parse(f.texte); recipe.id = f.id || uid(); recipe.maj = f.maj || Date.now(); recipe._imp = true; recs.push(recipe); } catch (e) {} });
+  const imp = a => (Array.isArray(a) ? a : []).map(x => ({ ...x, _imp:true }));
+  S.recipes = recs; S.prices = imp(d.prix); S.clients = imp(d.clients); S.orders = imp(d.commandes);
+  store(MKEY, d.materiel || {}); store(TKEY, d.supprimes || {});
+  if (d.reglages) { S.settings = Object.assign(S.settings, d.reglages); store(SKEY, S.settings); }
+  try { for (const k of await IDB.keys()) await IDB.del(k); } catch (e) {}
+}
+/* Points de restauration : copie complète avant chaque réception, on garde les 2 dernières */
+const SNAP_MAX = 2;
+async function makeSnapshot(reason){
+  const txt = backupText(await photosForBackup()), id = 'snap-' + Date.now();
+  await IDBX.snaps.put(id, { id, date:new Date().toISOString(), reason, txt, size:txt.length * 2, nRec:S.recipes.length, nCli:S.clients.length, nCmd:S.orders.length });
+  const keys = (await IDBX.snaps.keys()).sort();
+  while (keys.length > SNAP_MAX) await IDBX.snaps.del(keys.shift());
+}
+async function fillSnaps(){
+  const el = $('#snaps'); if (!el) return;
+  let list = [];
+  try { for (const k of (await IDBX.snaps.keys()).sort().reverse()) { const s = await IDBX.snaps.get(k); if (s) list.push(s); } } catch (e) {}
+  if (!$('#snaps')) return;
+  el.innerHTML = list.length ? list.map(s => `<div class="mrow"><b>${esc(fmtWhen(s.date))}</b><small>${esc(s.reason || '')} : ${plural(s.nRec || 0, 'recette')}, ${plural(s.nCli || 0, 'client')}, ${plural(s.nCmd || 0, 'commande')} (${fmtSize(s.size || 0)})</small><div class="mbtns"><button class="btn mini" data-act="snap-restore" data-id="${s.id}">Revenir à cette version</button><button class="btn mini danger" data-act="snap-del" data-id="${s.id}">Supprimer</button></div></div>`).join('') : '<p class="hint" style="margin-top:0">Aucun point de restauration pour l’instant : il en sera créé un automatiquement avant chaque réception de données.</p>';
+}
+async function restoreFile(file, mode){
   let d = null; try { d = JSON.parse(await file.text()); } catch (e) {}
   if (!d || d.format !== 'pas-a-pas-sauvegarde' || !Array.isArray(d.recettes)) { toast('Ce fichier n’est pas une sauvegarde Boudine’s cook.'); return; }
-  const np = (d.prix || []).length;
-  const how = await ask('Restaurer la sauvegarde ?', `Sauvegarde du ${fmtDateFr(String(d.date || '').slice(0, 10))} : ${plural(d.recettes.length, 'recette')}, ${np} prix. « Ajouter » garde tes données actuelles et complète avec la sauvegarde ; « Tout remplacer » efface d’abord ce qui est sur le téléphone.`, [{ label:'Ajouter aux données actuelles', value:'merge', kind:'primary' }, { label:'Tout remplacer', value:'replace', kind:'danger' }, { label:'Annuler', value:null }]);
+  let how = mode;
+  if (!how) how = await ask('Que faire de cette sauvegarde ?', `Sauvegarde du ${fmtWhen(d.date)} : ${plural(d.recettes.length, 'recette')}, ${plural((d.clients || []).length, 'client')}, ${plural((d.commandes || []).length, 'commande')}. « Fusionner » garde pour chaque élément la version la plus récente des deux téléphones ; « Tout remplacer » remet ce téléphone exactement comme dans la sauvegarde. Un point de restauration est créé avant, dans les deux cas.`, [{ label:'Fusionner (garder le plus récent)', value:'merge', kind:'primary' }, { label:'Tout remplacer', value:'replace', kind:'danger' }, { label:'Annuler', value:null }]);
   if (!how) return;
-  const recs = [];
-  d.recettes.forEach(f => { try { const { recipe } = parse(f.texte); recipe.id = f.id || uid(); recs.push(recipe); } catch (e) {} });
-  if (how === 'replace') {
-    S.recipes = recs; S.prices = Array.isArray(d.prix) ? d.prix : [];
-    S.clients = Array.isArray(d.clients) ? d.clients : []; S.orders = Array.isArray(d.commandes) ? d.commandes : [];
-    store(MKEY, d.materiel || {});
-    try { (await IDB.keys()).forEach(k => IDB.del(k)); } catch (e) {}
-    if (d.reglages) { S.settings = Object.assign(S.settings, d.reglages); store(SKEY, S.settings); }
-  } else {
-    recs.forEach(r => { if (!S.recipes.some(x => x.id === r.id || norm(x.titre) === norm(r.titre))) S.recipes.push(r); });
-    (d.prix || []).forEach(p => { if (p && p.name && !S.prices.some(x => norm(x.name) === norm(p.name))) S.prices.push(p); });
-    store(MKEY, Object.assign({}, d.materiel || {}, load(MKEY, {})));
-  }
-  if (how !== 'replace') { (d.clients || []).forEach(c => { if (c && c.id && !findClient(c.id)) S.clients.push(c); }); (d.commandes || []).forEach(o => { if (o && o.id && !findOrder(o.id)) S.orders.push(o); }); }
-  saveClients(); saveOrders();
+  toast('Point de restauration en cours…');
+  try { await makeSnapshot(how === 'merge' ? 'Avant réception (fusion)' : 'Avant remplacement'); }
+  catch (e) { const go = await ask('Point de restauration impossible', 'La copie de sécurité n’a pas pu être créée. Continuer quand même ?', [{ label:'Continuer', value:true, kind:'danger' }, { label:'Annuler', value:false }]); if (!go) return; }
+  let st = null;
+  if (how === 'replace') await applyReplace(d); else st = mergeBackup(d);
   await restorePhotos(d.photos || {});
-  persist(); savePrices(); render(); toast('Sauvegarde restaurée');
+  persist(); savePrices(); saveClients(); saveOrders(); render();
+  if (st) sheet(`<h3>Fusion terminée</h3><ul class="gaps" style="color:var(--ink)"><li>${plural(st.nouveaux, 'élément')} ${st.nouveaux > 1 ? 'ajoutés' : 'ajouté'}</li><li>${plural(st.maj, 'élément')} ${st.maj > 1 ? 'mis' : 'mis'} à jour (version plus récente)</li><li>${plural(st.suppr, 'élément')} ${st.suppr > 1 ? 'supprimés' : 'supprimé'} (effacés sur l’autre téléphone)</li></ul><p>En cas de souci, Paramétrage → « Points de restauration » permet de revenir à l’état d’avant.</p><div class="acts"><button class="btn" data-act="close-sheet">Compris</button></div>`);
+  else toast('Sauvegarde restaurée');
+}
+async function restoreSnapshot(id){
+  const s = await IDBX.snaps.get(id); if (!s) { toast('Point de restauration introuvable'); return; }
+  const ok = await ask('Revenir à cette version ?', `Le téléphone reviendra à son état du ${fmtWhen(s.date)}. L’état actuel est d’abord gardé comme point de restauration.`, [{ label:'Revenir à cette version', value:true, kind:'danger' }, { label:'Annuler', value:false }]);
+  if (!ok) return;
+  const d = JSON.parse(s.txt);
+  try { await makeSnapshot('Avant retour en arrière'); } catch (e) {}
+  await applyReplace(d); await restorePhotos(d.photos || {});
+  persist(); savePrices(); saveClients(); saveOrders(); render(); toast('Version restaurée');
+}
+async function dbInit(){
+  try {
+    const keys = await IDBX.kv.keys();
+    if (!keys.length) {
+      const mig = {};
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('pasapas:')) { try { mig[k] = JSON.parse(localStorage.getItem(k)); } catch (e) {} } }
+      for (const [k, v] of Object.entries(mig)) await IDBX.kv.put(k, v);
+      await IDBX.kv.put('pasapas:migre-le', new Date().toISOString());
+      KV.cache = mig; KV.migrated = Object.keys(mig).length > 0;
+    } else for (const k of keys) KV.cache[k] = await IDBX.kv.get(k);
+    KV.ready = true;
+    const tomb = KV.cache[TKEY]; if (tomb) { const lim = Date.now() - 180 * 864e5; let ch = false; Object.keys(tomb).forEach(k => { if (tomb[k] < lim) { delete tomb[k]; ch = true; } }); if (ch) store(TKEY, tomb); }
+  } catch (e) { KV.ready = false; }
 }
 
 /* ---------- Photos des recettes (stockées dans le téléphone) ---------- */
-const IDB = (() => {
+const IDBX = (() => {
   let p = null;
-  const open = () => p || (p = new Promise((res, rej) => { const r = indexedDB.open('pasapas', 1); r.onupgradeneeded = () => r.result.createObjectStore('photos'); r.onsuccess = () => res(r.result); r.onerror = () => { p = null; rej(r.error); }; }));
-  const tx = async (mode, fn) => { const db = await open(); return new Promise((res, rej) => { const t = db.transaction('photos', mode), rq = fn(t.objectStore('photos')); t.oncomplete = () => res(rq ? rq.result : undefined); t.onerror = () => rej(t.error); }); };
-  return { put:(k, v) => tx('readwrite', s => s.put(v, k)), get:k => tx('readonly', s => s.get(k)), del:k => tx('readwrite', s => s.delete(k)), keys:() => tx('readonly', s => s.getAllKeys()) };
+  const open = () => p || (p = new Promise((res, rej) => {
+    const r = indexedDB.open('pasapas', 2);
+    r.onupgradeneeded = () => { const db = r.result; ['photos', 'kv', 'snaps'].forEach(n => { if (!db.objectStoreNames.contains(n)) db.createObjectStore(n); }); };
+    r.onsuccess = () => res(r.result); r.onerror = () => { p = null; rej(r.error); };
+  }));
+  const tx = async (st, mode, fn) => { const db = await open(); return new Promise((res, rej) => { const t = db.transaction(st, mode), rq = fn(t.objectStore(st)); t.oncomplete = () => res(rq ? rq.result : undefined); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); }); };
+  const api = st => ({ put:(k, v) => tx(st, 'readwrite', s => s.put(v, k)), get:k => tx(st, 'readonly', s => s.get(k)), del:k => tx(st, 'readwrite', s => s.delete(k)), keys:() => tx(st, 'readonly', s => s.getAllKeys()) });
+  return { photos:api('photos'), kv:api('kv'), snaps:api('snaps') };
 })();
+const IDB = IDBX.photos;
 const photoURLs = {};
 function compressImage(file, max = 1600, q = 0.82){
   return new Promise(res => {
@@ -2901,7 +3055,7 @@ try { if (navigator.storage && navigator.storage.persist) navigator.storage.pers
 
 /* ---------- Clients et commandes ---------- */
 const CKEY = 'pasapas:clients', OKEY = 'pasapas:commandes';
-const saveClients = () => store(CKEY, S.clients), saveOrders = () => store(OKEY, S.orders);
+const saveClients = () => stampList(CKEY, S.clients, c => c.id, 'client'), saveOrders = () => stampList(OKEY, S.orders, o => o.id, 'commande');
 const clientName = c => c ? ([c.prenom, c.nom].filter(x => x && String(x).trim()).join(' ') || 'Client sans nom') : 'Client supprimé';
 const findClient = id => S.clients.find(c => c.id === id);
 const findOrder = id => S.orders.find(o => o.id === id);
@@ -3011,12 +3165,17 @@ function vClientEdit(){
   <div class="savebar"><button class="btn primary" data-act="client-save">Enregistrer le client</button></div>`;
 }
 
-S.clients = load(CKEY, []); S.orders = load(OKEY, []);
-S.prices = load(PKEY, []);
+S.clients = []; S.orders = []; S.prices = [];
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
-loadRecipes();
-render();
-initPhoto();
+(async () => {
+  await dbInit();
+  S.settings = Object.assign({ lire:true, autoMinuteur:true, lireNotes:false }, load(SKEY, {}));
+  S.clients = load(CKEY, []); S.orders = load(OKEY, []); S.prices = load(PKEY, []);
+  loadRecipes();
+  render();
+  initPhoto();
+  if (KV.migrated) toast('Tes données sont maintenant dans la base de données du téléphone');
+})();
 </script>
 </body>
 </html>
