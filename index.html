@@ -366,6 +366,13 @@ a.btn{text-decoration:none;color:inherit}
 .stepbtn small{color:var(--muted);font-weight:400;font-size:13px;white-space:nowrap}
 .stepbtn.cur{border-color:var(--herb)}
 
+.olines li{align-items:center}
+.olines .ltitle{flex:1;min-width:0}
+.olines .ltitle small{color:#2e9e5a;font-weight:700;font-size:12px}
+.olines li.lok .ltitle{color:var(--muted)}
+.lready{flex:none;width:30px;height:30px;border-radius:8px;border:2px solid var(--herb);background:var(--surface);color:#fff;font-weight:800;font-size:16px;cursor:pointer;padding:0}
+.lready[aria-pressed="true"]{background:#2e9e5a;border-color:#2e9e5a}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -384,7 +391,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.45';
+const APP_VERSION = '1.46';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1626,7 +1633,7 @@ function vRecap(){
   ${c.matRes && c.matRes.length ? `<h3 class="sub">Matériel</h3><ul class="gaps">${c.matRes.map(x => `<li>${esc(x.m)} (${esc(x.v)}) : ${gapText(x.gap)} sur ses étapes cette fois</li>`).join('')}</ul>` : ''}
   ${Object.keys(c.count || {}).length ? `<p class="hint">Pièces faites : ${Object.entries(c.count).filter(([, n]) => n > 0).map(([k, n]) => `étape ${+k + 1} : ${fmtQty(n)}`).join(', ')}</p>` : ''}
   <p class="hint">Chaque temps réel est enregistré dans le fichier de la recette ; seuls les 5 derniers sont gardés par étape.</p>
-  ${(n => n ? `<div class="mrow pausecard"><b>${plural(n, 'commande')} en attente ${n > 1 ? 'contiennent' : 'contient'} cette recette</b><small>Tu peux les marquer comme prêtes à livrer.</small><div class="mbtns"><button class="btn mini primary" data-act="orders-ready-recipe" data-id="${r.id}">Marquer ${n > 1 ? 'prêtes' : 'prête'}</button><button class="btn mini" data-act="go-orders">Voir les commandes</button></div></div>` : '')(pendingOrders().filter(o => (o.lignes || []).some(l => l.rid === r.id)).length)}
+  ${(n => n ? `<div class="mrow pausecard"><b>${plural(n, 'commande')} en attente ${n > 1 ? 'contiennent' : 'contient'} cette recette</b><small>Tu peux marquer leur ligne « ${esc(r.titre)} » comme prête ; une commande dont toutes les lignes sont prêtes passe en « Prête ».</small><div class="mbtns"><button class="btn mini primary" data-act="orders-ready-recipe" data-id="${r.id}">Marquer ${n > 1 ? 'prêtes' : 'prête'}</button><button class="btn mini" data-act="go-orders">Voir les commandes</button></div></div>` : '')(pendingOrders().filter(o => (o.lignes || []).some(l => l.rid === r.id && !l.prete)).length)}
   <div class="stack"><button class="btn primary" data-act="home">Retour à l’accueil</button><button class="btn" data-act="export" data-id="${r.id}">Exporter le fichier</button></div>`;
 }
 /* Lignes d'ingrédients d'une recette pour les courses : la liste si elle existe, sinon les quantités écrites dans les étapes */
@@ -1897,16 +1904,19 @@ document.addEventListener('click', async e => {
     case 'order-save': {
       captureOrderDraft(); const o = S.odraft;
       if (!o.clientId || !findClient(o.clientId)) { toast('Choisis un client.'); break; }
-      const lignes = Object.entries(o.q).filter(([rid, n]) => n > 0 && find(rid)).map(([rid, n]) => ({ rid, titre:find(rid).titre, qte:n, pu:find(rid).prixVente > 0 ? find(rid).prixVente : null }));
+      const lignes = Object.entries(o.q).filter(([rid, n]) => n > 0 && find(rid)).map(([rid, n]) => { const old = ((findOrder(o.id) || {}).lignes || []).find(x => x.rid === rid) || {}; return { rid, titre:find(rid).titre, qte:n, pu:find(rid).prixVente > 0 ? find(rid).prixVente : null, prete:!!old.prete && old.qte === n, preteLe:old.qte === n ? (old.preteLe || '') : '' }; });
       if (!lignes.length) { toast('Indique au moins une quantité.'); break; }
       const prev = findOrder(o.id), rec = { id:o.id, clientId:o.clientId, clientNom:clientName(findClient(o.clientId)), date:prev ? prev.date : new Date().toISOString(), livraison:o.livraison || '', statut:prev ? prev.statut : 'attente', livreeLe:prev ? prev.livreeLe : '', lignes, note:(o.note || '').trim() };
+      syncOrderStatus(rec);
       if (prev) S.orders[S.orders.indexOf(prev)] = rec; else S.orders.push(rec);
       saveOrders(); S.odraft = null; S.shop.touched = false; S.screen = S.ofrom && S.ofrom !== 'orderEdit' ? S.ofrom : 'orders'; render(); window.scrollTo(0, 0); toast('Commande enregistrée'); break;
     }
-    case 'order-ready': { const o = findOrder(id); if (!o) break; o.statut = 'prete'; o.preteLe = new Date().toISOString(); saveOrders(); render(); toast('Commande prête à livrer'); break; }
-    case 'orders-ready-recipe': { const rid = b.dataset.id; let n = 0; pendingOrders().forEach(o => { if ((o.lignes || []).some(l => l.rid === rid)) { o.statut = 'prete'; o.preteLe = new Date().toISOString(); n++; } }); saveOrders(); render(); toast(n ? `${plural(n, 'commande')} ${n > 1 ? 'prêtes' : 'prête'} à livrer` : 'Aucune commande à marquer'); break; }
+    case 'order-ready': { const o = findOrder(id); if (!o) break; setLinesReady(o, true); saveOrders(); render(); toast('Commande prête à livrer'); break; }
+    case 'order-unready': { const o = findOrder(id); if (!o) break; setLinesReady(o, false); saveOrders(); render(); toast('Commande remise à préparer'); break; }
+    case 'line-ready': { const o = findOrder(id), l = o && (o.lignes || [])[+b.dataset.i]; if (!l) break; l.prete = !l.prete; l.preteLe = l.prete ? new Date().toISOString() : ''; const before = o.statut; syncOrderStatus(o); saveOrders(); render(); toast(o.statut === 'prete' && before !== 'prete' ? 'Toutes les lignes sont prêtes : commande prête à livrer' : l.prete ? `${lineTitle(l)} : prête` : `${lineTitle(l)} : à préparer`); break; }
+    case 'orders-ready-recipe': { const rid = b.dataset.id; let n = 0, full = 0; pendingOrders().forEach(o => { if ((o.lignes || []).some(l => l.rid === rid && !l.prete)) { setLinesReady(o, true, rid); n++; if (o.statut === 'prete') full++; } }); saveOrders(); render(); toast(n ? `${plural(n, 'ligne')} ${n > 1 ? 'marquées prêtes' : 'marquée prête'}${full ? `, ${plural(full, 'commande')} ${full > 1 ? 'complètes' : 'complète'}` : ''}` : 'Aucune ligne à marquer'); break; }
     case 'order-done': { const o = findOrder(id); if (!o) break; o.statut = 'livree'; o.livreeLe = new Date().toISOString(); saveOrders(); render(); toast('Commande marquée livrée'); break; }
-    case 'order-reopen': { const o = findOrder(id); if (!o) break; o.statut = 'attente'; o.livreeLe = ''; saveOrders(); render(); toast('Commande remise en attente'); break; }
+    case 'order-reopen': { const o = findOrder(id); if (!o) break; o.statut = 'attente'; o.livreeLe = ''; syncOrderStatus(o); saveOrders(); render(); toast(o.statut === 'prete' ? 'Commande remise en « prête »' : 'Commande remise en attente'); break; }
     case 'order-cancel': { const o = findOrder(id); if (!o) break; const ok = await ask('Annuler cette commande ?', 'Elle restera visible dans l’historique.', [{ label:'Annuler la commande', value:true, kind:'danger' }, { label:'Garder', value:false }]); if (ok) { o.statut = 'annulee'; saveOrders(); render(); } break; }
     case 'order-del': { const ok = await ask('Supprimer définitivement ?', 'La commande disparaîtra aussi de l’historique.', [{ label:'Supprimer', value:true, kind:'danger' }, { label:'Garder', value:false }]); if (ok) { S.orders = S.orders.filter(o => o.id !== id); saveOrders(); render(); } break; }
     case 'shop-orders': shopFromOrders(); render(); break;
@@ -3230,7 +3240,19 @@ const findClient = id => S.clients.find(c => c.id === id);
 const findOrder = id => S.orders.find(o => o.id === id);
 const pendingOrders = () => S.orders.filter(o => o.statut === 'attente');
 const readyOrders = () => S.orders.filter(o => o.statut === 'prete');
-function pendingByRecipe(){ const m = {}; pendingOrders().forEach(o => (o.lignes || []).forEach(l => { m[l.rid] = (m[l.rid] || 0) + (+l.qte || 0); })); return m; }
+function pendingByRecipe(){ const m = {}; pendingOrders().forEach(o => (o.lignes || []).forEach(l => { if (!l.prete) m[l.rid] = (m[l.rid] || 0) + (+l.qte || 0); })); return m; }
+/* « Prête » ligne par ligne : la commande est prête quand toutes ses lignes le sont */
+function syncOrderStatus(o){
+  if (!o || o.statut === 'livree' || o.statut === 'annulee') return;
+  const ls = o.lignes || [], all = ls.length > 0 && ls.every(l => l.prete);
+  if (all && o.statut !== 'prete') { o.statut = 'prete'; o.preteLe = new Date().toISOString(); }
+  else if (!all && o.statut === 'prete') o.statut = 'attente';
+}
+function setLinesReady(o, ready, rid){
+  const now = new Date().toISOString();
+  (o.lignes || []).forEach(l => { if (rid && l.rid !== rid) return; l.prete = ready; l.preteLe = ready ? (l.preteLe || now) : ''; });
+  syncOrderStatus(o);
+}
 const fmtD = iso => iso ? fmtDateFr(String(iso).slice(0, 10)) : '';
 const pcs = n => `${fmtQty(n)} ${n > 1 ? 'pièces' : 'pièce'}`;
 const lineTitle = l => { const r = find(l.rid); return r ? r.titre : `${l.titre || 'Recette'} (supprimée)`; };
@@ -3272,11 +3294,11 @@ function orderCard(o){
   const puOf = l => { const r = find(l.rid); return l.pu > 0 ? l.pu : (r && r.prixVente > 0 ? r.prixVente : 0); };
   const montant = lignes.reduce((a, l) => { const r = find(l.rid), pu = l.pu > 0 ? l.pu : (r && r.prixVente > 0 ? r.prixVente : 0); return a + pu * (+l.qte || 0); }, 0);
   const st = { attente:'En attente', prete:'Prête', livree:'Livrée', annulee:'Annulée' }[o.statut] || o.statut;
-  return `<div class="mrow"><div class="ohead"><b>${esc(c ? clientName(c) : (o.clientNom || 'Client supprimé'))}</b><span class="badge b-${o.statut}">${st}</span></div>
+  return `<div class="mrow"><div class="ohead"><b>${esc(c ? clientName(c) : (o.clientNom || 'Client supprimé'))}</b><span class="badge b-${o.statut}">${o.statut === 'attente' && lignes.some(l => l.prete) ? `${lignes.filter(l => l.prete).length}/${lignes.length} prêtes` : st}</span></div>
   <small>${o.livraison ? `Pour le ${fmtD(o.livraison)}, ` : ''}passée le ${fmtD(o.date)}${o.preteLe && (o.statut === 'prete' || o.statut === 'livree') ? `, prête le ${fmtD(o.preteLe)}` : ''}${o.statut === 'livree' && o.livreeLe ? `, livrée le ${fmtD(o.livreeLe)}` : ''}</small>
-  <ul class="olines">${lignes.map(l => { const q = +l.qte || 0, pu = puOf(l); return `<li><span>${esc(lineTitle(l))}</span><span class="ocalc">${fmtQty(q)}${pu ? ` × ${fmtEuro(pu)} = <b>${fmtEuro(q * pu)}</b>` : ''}</span></li>`; }).join('')}</ul>
+  <ul class="olines">${lignes.map((l, k) => { const q = +l.qte || 0, pu = puOf(l), open = o.statut === 'attente' || o.statut === 'prete'; return `<li class="${l.prete ? 'lok' : ''}">${open ? `<button class="lready" data-act="line-ready" data-id="${o.id}" data-i="${k}" aria-pressed="${!!l.prete}" aria-label="${l.prete ? 'Ligne prête : toucher pour annuler' : 'Marquer cette ligne prête'}">${l.prete ? '✓' : ''}</button>` : ''}<span class="ltitle">${esc(lineTitle(l))}${l.prete && open ? ' <small>prête</small>' : ''}</span><span class="ocalc">${fmtQty(q)}${pu ? ` × ${fmtEuro(pu)} = <b>${fmtEuro(q * pu)}</b>` : ''}</span></li>`; }).join('')}</ul>
   ${montant > 0 ? `<div class="ototal"><span>${pcs(tot)}</span><b>Total ${fmtEuro(montant)}</b></div>` : `<small>${pcs(tot)}</small>`}${o.note ? `<small>${esc(o.note)}</small>` : ''}
-  <div class="mbtns">${o.statut === 'attente' ? `<button class="btn mini primary" data-act="order-ready" data-id="${o.id}">Prête</button><button class="btn mini" data-act="order-done" data-id="${o.id}">Livrée</button><button class="btn mini" data-act="order-edit" data-id="${o.id}">Modifier</button><button class="btn mini danger" data-act="order-cancel" data-id="${o.id}">Annuler</button>` : o.statut === 'prete' ? `<button class="btn mini primary" data-act="order-done" data-id="${o.id}">Livrée</button><button class="btn mini" data-act="order-reopen" data-id="${o.id}">Pas prête</button><button class="btn mini" data-act="order-edit" data-id="${o.id}">Modifier</button><button class="btn mini danger" data-act="order-cancel" data-id="${o.id}">Annuler</button>` : `<button class="btn mini" data-act="order-reopen" data-id="${o.id}">Remettre en attente</button><button class="btn mini danger" data-act="order-del" data-id="${o.id}">Supprimer</button>`}</div></div>`;
+  <div class="mbtns">${o.statut === 'attente' ? `<button class="btn mini primary" data-act="order-ready" data-id="${o.id}">Prête</button><button class="btn mini" data-act="order-done" data-id="${o.id}">Livrée</button><button class="btn mini" data-act="order-edit" data-id="${o.id}">Modifier</button><button class="btn mini danger" data-act="order-cancel" data-id="${o.id}">Annuler</button>` : o.statut === 'prete' ? `<button class="btn mini primary" data-act="order-done" data-id="${o.id}">Livrée</button><button class="btn mini" data-act="order-unready" data-id="${o.id}">Pas prête</button><button class="btn mini" data-act="order-edit" data-id="${o.id}">Modifier</button><button class="btn mini danger" data-act="order-cancel" data-id="${o.id}">Annuler</button>` : `<button class="btn mini" data-act="order-reopen" data-id="${o.id}">Remettre en attente</button><button class="btn mini danger" data-act="order-del" data-id="${o.id}">Supprimer</button>`}</div></div>`;
 }
 function vOrders(){
   const byDate = (a, b) => String(a.livraison || a.date).localeCompare(String(b.livraison || b.date));
@@ -3346,6 +3368,7 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.se
   await dbInit();
   S.settings = Object.assign({ lire:true, autoMinuteur:true, lireNotes:false, smic:12.31, forfaitH:3 }, load(SKEY, {}));
   S.clients = load(CKEY, []); S.orders = load(OKEY, []); S.prices = load(PKEY, []); S.cooks = load(CLKEY, []);
+  S.orders.forEach(o => { if (o.statut === 'prete' && (o.lignes || []).every(l => !l.prete)) (o.lignes || []).forEach(l => { l.prete = true; l.preteLe = o.preteLe || ''; }); });
   loadRecipes();
   render();
   initPhoto();
