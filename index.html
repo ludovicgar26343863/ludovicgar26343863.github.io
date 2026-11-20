@@ -314,6 +314,7 @@ label.btn{cursor:pointer;position:relative}
 
 .badge{display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;background:var(--saffron-soft);color:var(--ink);white-space:nowrap}
 .badge.b-livree{background:rgba(46,160,90,.2)}
+.badge.b-prete{background:rgba(42,147,201,.25)}
 .badge.b-annulee{background:rgba(181,56,15,.18)}
 .ohead{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .oline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1.5px solid var(--line)}
@@ -383,7 +384,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.44';
+const APP_VERSION = '1.45';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1458,7 +1459,7 @@ function vHome(){
   <button class="choice" data-act="go-shop"><strong>Courses</strong><span>La liste des ingrédients à acheter, envoyée vers Notes</span></button>
   <button class="choice" data-act="go-prices"><strong>Scan ticket</strong><span>Mettre à jour le prix des ingrédients et le coût des plats</span></button>
   ${(() => { const p = pendingOrders(), nc = new Set(p.map(o => o.clientId)).size; return `<button class="choice" data-act="go-clients"><strong>Clients</strong><span>${S.clients.length ? `${plural(S.clients.length, 'client')}${nc ? `, ${nc} avec une commande en attente` : ''}` : 'Coordonnées et réseaux sociaux'}</span></button>
-  <button class="choice" data-act="go-orders"><strong>Commandes</strong><span>${p.length ? `${plural(p.length, 'commande')} en attente` : 'Quantités par client et historique'}</span></button>`; })()}
+  <button class="choice" data-act="go-orders"><strong>Commandes</strong><span>${p.length || readyOrders().length ? [p.length ? `${p.length} en attente` : '', readyOrders().length ? `${readyOrders().length} ${readyOrders().length > 1 ? 'prêtes' : 'prête'} à livrer` : ''].filter(Boolean).join(', ') : 'Quantités par client et historique'}</span></button>`; })()}
   <button class="choice" data-act="go-settings"><strong>Paramétrage</strong><span>Sauvegarde globale, réglages et fichiers</span></button>
   ${SR ? '' : `<p class="hint">La commande vocale n’est pas disponible dans ce navigateur : les boutons font tout. Pour l’essayer, ouvre la page dans Chrome sur ton téléphone.</p>`}
   ${n && old ? `<p class="hint">${last ? 'Ta dernière sauvegarde date de plus d’un mois' : 'Tu n’as encore jamais fait de sauvegarde'} : pense à en faire une dans Paramétrage.</p>` : ''}
@@ -1625,6 +1626,7 @@ function vRecap(){
   ${c.matRes && c.matRes.length ? `<h3 class="sub">Matériel</h3><ul class="gaps">${c.matRes.map(x => `<li>${esc(x.m)} (${esc(x.v)}) : ${gapText(x.gap)} sur ses étapes cette fois</li>`).join('')}</ul>` : ''}
   ${Object.keys(c.count || {}).length ? `<p class="hint">Pièces faites : ${Object.entries(c.count).filter(([, n]) => n > 0).map(([k, n]) => `étape ${+k + 1} : ${fmtQty(n)}`).join(', ')}</p>` : ''}
   <p class="hint">Chaque temps réel est enregistré dans le fichier de la recette ; seuls les 5 derniers sont gardés par étape.</p>
+  ${(n => n ? `<div class="mrow pausecard"><b>${plural(n, 'commande')} en attente ${n > 1 ? 'contiennent' : 'contient'} cette recette</b><small>Tu peux les marquer comme prêtes à livrer.</small><div class="mbtns"><button class="btn mini primary" data-act="orders-ready-recipe" data-id="${r.id}">Marquer ${n > 1 ? 'prêtes' : 'prête'}</button><button class="btn mini" data-act="go-orders">Voir les commandes</button></div></div>` : '')(pendingOrders().filter(o => (o.lignes || []).some(l => l.rid === r.id)).length)}
   <div class="stack"><button class="btn primary" data-act="home">Retour à l’accueil</button><button class="btn" data-act="export" data-id="${r.id}">Exporter le fichier</button></div>`;
 }
 /* Lignes d'ingrédients d'une recette pour les courses : la liste si elle existe, sinon les quantités écrites dans les étapes */
@@ -1901,6 +1903,8 @@ document.addEventListener('click', async e => {
       if (prev) S.orders[S.orders.indexOf(prev)] = rec; else S.orders.push(rec);
       saveOrders(); S.odraft = null; S.shop.touched = false; S.screen = S.ofrom && S.ofrom !== 'orderEdit' ? S.ofrom : 'orders'; render(); window.scrollTo(0, 0); toast('Commande enregistrée'); break;
     }
+    case 'order-ready': { const o = findOrder(id); if (!o) break; o.statut = 'prete'; o.preteLe = new Date().toISOString(); saveOrders(); render(); toast('Commande prête à livrer'); break; }
+    case 'orders-ready-recipe': { const rid = b.dataset.id; let n = 0; pendingOrders().forEach(o => { if ((o.lignes || []).some(l => l.rid === rid)) { o.statut = 'prete'; o.preteLe = new Date().toISOString(); n++; } }); saveOrders(); render(); toast(n ? `${plural(n, 'commande')} ${n > 1 ? 'prêtes' : 'prête'} à livrer` : 'Aucune commande à marquer'); break; }
     case 'order-done': { const o = findOrder(id); if (!o) break; o.statut = 'livree'; o.livreeLe = new Date().toISOString(); saveOrders(); render(); toast('Commande marquée livrée'); break; }
     case 'order-reopen': { const o = findOrder(id); if (!o) break; o.statut = 'attente'; o.livreeLe = ''; saveOrders(); render(); toast('Commande remise en attente'); break; }
     case 'order-cancel': { const o = findOrder(id); if (!o) break; const ok = await ask('Annuler cette commande ?', 'Elle restera visible dans l’historique.', [{ label:'Annuler la commande', value:true, kind:'danger' }, { label:'Garder', value:false }]); if (ok) { o.statut = 'annulee'; saveOrders(); render(); } break; }
@@ -3225,6 +3229,7 @@ const clientName = c => c ? ([c.prenom, c.nom].filter(x => x && String(x).trim()
 const findClient = id => S.clients.find(c => c.id === id);
 const findOrder = id => S.orders.find(o => o.id === id);
 const pendingOrders = () => S.orders.filter(o => o.statut === 'attente');
+const readyOrders = () => S.orders.filter(o => o.statut === 'prete');
 function pendingByRecipe(){ const m = {}; pendingOrders().forEach(o => (o.lignes || []).forEach(l => { m[l.rid] = (m[l.rid] || 0) + (+l.qte || 0); })); return m; }
 const fmtD = iso => iso ? fmtDateFr(String(iso).slice(0, 10)) : '';
 const pcs = n => `${fmtQty(n)} ${n > 1 ? 'pièces' : 'pièce'}`;
@@ -3255,6 +3260,7 @@ function vClients(){
   const titleOf = rid => { const l = pend.flatMap(o => o.lignes || []).find(x => x.rid === rid); return lineTitle(l || { rid }); };
   return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Clients</h2></div>
   <div class="totals"><span>Clients avec une commande en attente</span><b>${nCli}</b></div>
+  ${readyOrders().length ? `<div class="totals"><span>Commandes prêtes à livrer</span><b>${readyOrders().length}</b></div>` : ''}
   ${Object.keys(byR).length ? `<h3 class="sub">En attente par recette</h3><ul class="gaps" style="color:var(--ink)">${Object.entries(byR).sort((a, b) => b[1] - a[1]).map(([rid, n]) => `<li><b>${esc(titleOf(rid))}</b> : ${pcs(n)}</li>`).join('')}</ul>` : '<p class="hint">Aucune commande en attente.</p>'}
   <div class="row-btns" style="margin-top:14px"><button class="btn primary" data-act="client-new" style="flex:1">Ajouter un client</button><button class="btn" data-act="go-orders" style="flex:1">Commandes</button></div>
   ${S.clients.length > 4 ? `<input id="cq" class="search" type="search" placeholder="Rechercher un client" value="${esc(S.cq || '')}" aria-label="Rechercher un client">` : ''}
@@ -3265,18 +3271,21 @@ function orderCard(o){
   const c = findClient(o.clientId), lignes = o.lignes || [], tot = lignes.reduce((a, l) => a + (+l.qte || 0), 0);
   const puOf = l => { const r = find(l.rid); return l.pu > 0 ? l.pu : (r && r.prixVente > 0 ? r.prixVente : 0); };
   const montant = lignes.reduce((a, l) => { const r = find(l.rid), pu = l.pu > 0 ? l.pu : (r && r.prixVente > 0 ? r.prixVente : 0); return a + pu * (+l.qte || 0); }, 0);
-  const st = { attente:'En attente', livree:'Livrée', annulee:'Annulée' }[o.statut] || o.statut;
+  const st = { attente:'En attente', prete:'Prête', livree:'Livrée', annulee:'Annulée' }[o.statut] || o.statut;
   return `<div class="mrow"><div class="ohead"><b>${esc(c ? clientName(c) : (o.clientNom || 'Client supprimé'))}</b><span class="badge b-${o.statut}">${st}</span></div>
-  <small>${o.livraison ? `Pour le ${fmtD(o.livraison)}, ` : ''}passée le ${fmtD(o.date)}${o.statut === 'livree' && o.livreeLe ? `, livrée le ${fmtD(o.livreeLe)}` : ''}</small>
+  <small>${o.livraison ? `Pour le ${fmtD(o.livraison)}, ` : ''}passée le ${fmtD(o.date)}${o.preteLe && (o.statut === 'prete' || o.statut === 'livree') ? `, prête le ${fmtD(o.preteLe)}` : ''}${o.statut === 'livree' && o.livreeLe ? `, livrée le ${fmtD(o.livreeLe)}` : ''}</small>
   <ul class="olines">${lignes.map(l => { const q = +l.qte || 0, pu = puOf(l); return `<li><span>${esc(lineTitle(l))}</span><span class="ocalc">${fmtQty(q)}${pu ? ` × ${fmtEuro(pu)} = <b>${fmtEuro(q * pu)}</b>` : ''}</span></li>`; }).join('')}</ul>
   ${montant > 0 ? `<div class="ototal"><span>${pcs(tot)}</span><b>Total ${fmtEuro(montant)}</b></div>` : `<small>${pcs(tot)}</small>`}${o.note ? `<small>${esc(o.note)}</small>` : ''}
-  <div class="mbtns">${o.statut === 'attente' ? `<button class="btn mini primary" data-act="order-done" data-id="${o.id}">Livrée</button><button class="btn mini" data-act="order-edit" data-id="${o.id}">Modifier</button><button class="btn mini danger" data-act="order-cancel" data-id="${o.id}">Annuler</button>` : `<button class="btn mini" data-act="order-reopen" data-id="${o.id}">Remettre en attente</button><button class="btn mini danger" data-act="order-del" data-id="${o.id}">Supprimer</button>`}</div></div>`;
+  <div class="mbtns">${o.statut === 'attente' ? `<button class="btn mini primary" data-act="order-ready" data-id="${o.id}">Prête</button><button class="btn mini" data-act="order-done" data-id="${o.id}">Livrée</button><button class="btn mini" data-act="order-edit" data-id="${o.id}">Modifier</button><button class="btn mini danger" data-act="order-cancel" data-id="${o.id}">Annuler</button>` : o.statut === 'prete' ? `<button class="btn mini primary" data-act="order-done" data-id="${o.id}">Livrée</button><button class="btn mini" data-act="order-reopen" data-id="${o.id}">Pas prête</button><button class="btn mini" data-act="order-edit" data-id="${o.id}">Modifier</button><button class="btn mini danger" data-act="order-cancel" data-id="${o.id}">Annuler</button>` : `<button class="btn mini" data-act="order-reopen" data-id="${o.id}">Remettre en attente</button><button class="btn mini danger" data-act="order-del" data-id="${o.id}">Supprimer</button>`}</div></div>`;
 }
 function vOrders(){
-  const pend = pendingOrders().sort((a, b) => String(a.livraison || a.date).localeCompare(String(b.livraison || b.date)));
+  const byDate = (a, b) => String(a.livraison || a.date).localeCompare(String(b.livraison || b.date));
+  const pend = pendingOrders().sort(byDate), ready = readyOrders().sort(byDate);
   return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Commandes</h2></div>
   <div class="row-btns"><button class="btn primary" data-act="order-new" style="flex:1">Nouvelle commande</button><button class="btn" data-act="go-history" style="flex:1">Historique</button></div>
-  <h3 class="sub">En attente (${pend.length})</h3>
+  <h3 class="sub">Prêtes à livrer (${ready.length})</h3>
+  ${ready.length ? ready.map(orderCard).join('') : '<p class="hint" style="margin-top:0">Aucune commande prête pour l’instant.</p>'}
+  <h3 class="sub">En attente, à préparer (${pend.length})</h3>
   ${pend.length ? pend.map(orderCard).join('') : '<div class="empty"><p>Aucune commande en attente.</p></div>'}`;
 }
 function vOrderEdit(){
@@ -3309,7 +3318,7 @@ function vHistory(){
   return `<div class="topbar"><button class="btn ghost" data-act="go-orders">‹ Commandes</button><h2>Historique</h2></div>
   <div class="row-btns" style="margin-top:0"><button class="btn primary" data-act="go-profit" style="flex:1">Rentabilité</button></div>
   <div class="tgrid" style="grid-template-columns:1fr 1fr"><label class="lbl">Client<select data-hist="client"><option value="">Tous les clients</option>${cl.map(c => `<option value="${c.id}" ${f.client === c.id ? 'selected' : ''}>${esc(clientName(c))}</option>`).join('')}</select></label>
-  <label class="lbl">État<select data-hist="statut">${[['', 'Tous'], ['attente', 'En attente'], ['livree', 'Livrées'], ['annulee', 'Annulées']].map(([k, l]) => `<option value="${k}" ${f.statut === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+  <label class="lbl">État<select data-hist="statut">${[['', 'Tous'], ['attente', 'En attente'], ['prete', 'Prêtes'], ['livree', 'Livrées'], ['annulee', 'Annulées']].map(([k, l]) => `<option value="${k}" ${f.statut === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
   <p class="hint">${plural(list.length, 'commande')}, ${pcs(tot)} (hors annulées).</p>
   ${list.length ? list.map(orderCard).join('') : '<div class="empty"><p>Aucune commande pour ce filtre.</p></div>'}`;
 }
