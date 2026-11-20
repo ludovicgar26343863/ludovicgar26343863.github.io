@@ -349,6 +349,22 @@ a.btn{text-decoration:none;color:inherit}
 .pos{color:#2e9e5a}
 .neg{color:var(--alert)}
 
+.heldbar{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0}
+.heldchip{border:1.5px solid var(--herb);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;font-size:15px;font-weight:700;cursor:pointer}
+.heldchip.due{border-color:var(--alert);color:var(--alert)}
+.heldchip b{font-variant-numeric:tabular-nums}
+.counter{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--surface);border:1.5px solid var(--line);border-radius:18px;padding:12px 16px;margin:12px 0}
+.counter .cval{display:flex;align-items:baseline;gap:8px}
+.counter .cval span{color:var(--muted);font-size:15px}
+.counter .cval b{font-family:var(--f-head);font-size:34px;font-weight:800;color:var(--herb);font-variant-numeric:tabular-nums}
+.counter .cval small{color:var(--muted);font-size:16px}
+.counter .cctl{display:flex;align-items:center;gap:8px}
+.counter .porin.small{max-width:80px;font-size:20px}
+.stepbtn{display:flex;align-items:center;gap:10px;justify-content:flex-start;text-align:left;min-height:56px}
+.stepbtn .stxt{flex:1;font-weight:400;font-size:15px;line-height:1.3}
+.stepbtn small{color:var(--muted);font-weight:400;font-size:13px;white-space:nowrap}
+.stepbtn.cur{border-color:var(--herb)}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -367,7 +383,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.43';
+const APP_VERSION = '1.44';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -791,16 +807,23 @@ async function micRetry(){
 }
 function updMic(){ const b = $('#mic'); if (!b) return; b.classList.toggle('on', V.state === 'on'); $('#mic-l').textContent = micLabel(); }
 /* ---------- Compréhension des commandes vocales ---------- */
-const NUMW = { un:1, une:1, deux:2, trois:3, quatre:4, cinq:5, six:6, sept:7, huit:8, neuf:9, dix:10, quinze:15, vingt:20, trente:30 };
+const NUMW = { un:1, une:1, deux:2, trois:3, quatre:4, cinq:5, six:6, sept:7, huit:8, neuf:9, dix:10, onze:11, douze:12, treize:13, quatorze:14, quinze:15, seize:16, vingt:20, trente:30, quarante:40, cinquante:50, soixante:60, cent:100 };
 function cmdNorm(raw){
   return norm(raw).replace(/[.,!?;:«»"()]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 function numify(n){
-  return n.replace(/\b(un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|quinze|vingt|trente)\b(?=\s+(minutes?|min|portions?|personnes?|parts?|pieces?))/g, w => String(NUMW[w]));
+  const W = '(un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze|treize|quatorze|quinze|seize|vingt|trente|quarante|cinquante|soixante|cent)';
+  return n.replace(new RegExp(`\\b${W}\\b(?=\\s+(minutes?|min|portions?|personnes?|parts?|pieces?|nems?))`, 'g'), w => String(NUMW[w])).replace(new RegExp(`\\b(etape|fait|fais|roule|plie|forme|ajoute|rajoute|compteur a|compteur)\\s+${W}\\b`, 'g'), (m, a, w) => `${a} ${NUMW[w]}`);
 }
 const INTENTS = [
   { id:'endRecipe', label:'Terminer la recette', re:[/termine(r|z)? (la |cette )?recette/, /fin de (la )?recette/, /recette (est )?(terminee|finie)/] },
   { id:'pauseRecipe', label:'Mettre la recette en pause', re:[/(pause|en pause).*(recette)/, /(recette).*(en pause)/, /reprendre? plus tard/, /on (reprend|continue|termine) demain/, /on s'arrete la/, /mets? (tout )?en pause/] },
+  { id:'countSet', label:'Compteur corrigé', re:[/(remets?|mets?|corrige|regle)\s*(le )?compteur (a |sur )?(\d+)/] },
+  { id:'countAdd', label:'Pièces ajoutées', re:[/j'en ai (fait|roule|fini|termine|forme|plie|monte|prepare|mis)\s*(encore )?(\d+)/, /\b(\d+) de (plus|faits?|faites?)\b/, /(ajoute|rajoute|compte|plus)\s*(\d+)\s*(pieces?|nems?|unites?|au compteur)/, /(\d+)\s*(pieces?|nems?) (faits?|faites?|de faits?|de faites?)/, /^encore (\d+)$/] },
+  { id:'countAsk', label:'Compteur', re:[/combien (j'en ai|on en a|de pieces?)/, /ou en est le compteur/, /^compteur$/] },
+  { id:'hold', label:'Étape mise en attente', re:[/(mets?|mettre) (l'etape |cette etape |ca |l'etape en cours )?en attente/, /en attente/, /en attendant/, /on (y )?reviendra/, /de cote/, /une autre etape/] },
+  { id:'jump', label:'Changer d’étape', re:[/(va|aller|vas|passe|passer|retourne|reviens|revenir|reprends?|reprendre|affiche|montre)\s*(a |sur )?(l')?etape (\d+)/, /^etape (\d+)$/] },
+  { id:'stepsList', label:'Liste des étapes', re:[/(liste|toutes) (des |les )?etapes/, /quelles? etapes?/] },
   { id:'next', label:'Étape suivante', re:[/etapes? (est |sont )?termine/, /termine(e|s)? (l'|cette |l )?etape/, /etape suivante/, /\bsuivante?\b/, /\bc'est fait\b/, /\bj'ai (fini|termine)\b/, /\b(c'est )?(fini|termine)$/, /\bon passe a la suite\b/, /\bla suite\b/, /\bnext\b/] },
   { id:'prev', label:'Étape précédente', re:[/precedent/, /\bretour\b/, /etape d'avant/, /\breviens?\b/, /en arriere/] },
   { id:'repeat', label:'Relire l’étape', re:[/repet/, /relis/, /relire/, /redis/, /\bpardon\b/, /j'ai pas (compris|entendu)/, /tu peux redire/] },
@@ -843,6 +866,8 @@ function voiceHelp(){
   <li><b>« Ajoute 2 minutes »</b>, « encore une minute »</li>
   <li><b>« Ingrédients »</b>, <b>« Lis mes notes »</b>, <b>« Note »</b> … « fin de note »</li>
   <li><b>« Stop »</b> ou « OK » pour couper l’alerte</li>
+  <li><b>« Mets l’étape en attente »</b>, <b>« Va à l’étape 3 »</b>, « liste des étapes »</li>
+  <li><b>« J’en ai fait 50 »</b>, « 40 de plus », « combien j’en ai fait ? », « remets le compteur à 80 »</li>
   <li><b>« Mets la recette en pause »</b>, <b>« Termine la recette »</b></li></ul>
   <p>Parle normalement après le petit bip ou quand l’application a fini de parler. Tu peux aussi me couper en disant « stop ».</p>
   <div class="acts"><button class="btn" data-act="close-sheet">Compris</button></div>`);
@@ -903,6 +928,12 @@ function heard(input){
       case 'note': return startNote();
       case 'ingredients': return readIngredients();
       case 'help': return voiceHelp();
+      case 'countAdd': { const m = numify(n).match(/(\d+)/); return m ? addCount(+m[1]) : say('Combien en as-tu fait ?', true); }
+      case 'countSet': { const m = numify(n).match(/(\d+)/); return m ? setCount(+m[1]) : null; }
+      case 'countAsk': return sayCount();
+      case 'hold': return holdStep();
+      case 'jump': { const m = numify(n).match(/etape (\d+)/); const k = m ? +m[1] - 1 : -1; if (k < 0 || !c.r.etapes[k]) return say('Je ne trouve pas cette étape.', true); return jumpStep(k); }
+      case 'stepsList': return stepsSheet();
     }
   }
   if (isEcho(n0)) return;
@@ -915,7 +946,7 @@ function startCook(id){
   const r = find(id); if (!r) return;
   ensureAudio();
   const base = r.portions || 1;
-  S.cook = { rid:id, r, i:-1, t:null, stepStart:0, results:[], alarm:false, note:null, confirmEnd:0, base, portions:base, f:1, mats:allMat(r), mat:{}, matRes:[] };
+  S.cook = { rid:id, r, i:-1, t:null, stepStart:0, results:[], alarm:false, note:null, confirmEnd:0, base, portions:base, f:1, mats:allMat(r), mat:{}, matRes:[], held:{}, done:[], count:{}, stepAccCur:0, workAccCur:0 };
   const gmv = load(MKEY, {}); S.cook.mats.forEach(m => { S.cook.mat[m] = gmv[norm(m)] || ''; });
   { const pd = pendingByRecipe()[id]; if (pd > 0) { S.cook.pend = pd; S.cook.portions = Math.round(pd); S.cook.f = S.cook.portions / base; } }
   S.screen = 'cook'; render(); window.scrollTo(0, 0);
@@ -932,9 +963,19 @@ function goStep(i, auto){
   if (!S.cook || !S.cook.r.etapes[i]) return;
   const c = S.cook; stopAlarm(); cancelNote(true);
   c.i = i; const st = c.r.etapes[i];
+  c.done = (c.done || []).filter(x => x !== i);
+  const h = c.held && c.held[i];
+  if (h) {
+    delete c.held[i];
+    c.t = h.t; c.stepAccCur = h.stepAcc || 0; c.workAccCur = h.workAcc || 0;
+    c.stepStart = Date.now(); c.workStart = c.workAccCur > 0 ? Date.now() : null;
+    render(); window.scrollTo(0, 0);
+    say(`On reprend l’étape ${i + 1}. ${stepRender(st, c.r, c.f, i, false)}`);
+    saveSession(false); return;
+  }
   const tt = st.temps ? Math.max(1, Math.round(st.temps * c.f)) : 0;
   c.t = tt ? { base:tt, total:tt, remaining:tt, endAt:0, running:false, done:false } : null;
-  c.stepStart = Date.now(); c.workStart = null;
+  c.stepStart = Date.now(); c.workStart = null; c.stepAccCur = 0; c.workAccCur = 0;
   render(); window.scrollTo(0, 0);
   let text = `Étape ${i + 1}. ${stepRender(st, c.r, c.f, i, false)}`;
   if (S.settings.lireNotes && st.notes.length) text += `. Note : ${st.notes.join('. ')}`;
@@ -945,20 +986,72 @@ function goStep(i, auto){
 function finishStep(){
   const c = S.cook; if (!c) return;
   if (c.i < 0) return goStep(0, true);
-  const st = c.r.etapes[c.i], d = Math.max(1, Math.round((Date.now() - (c.workStart || c.stepStart)) / 1000));
+  const now = Date.now(), st = c.r.etapes[c.i];
+  const work = (c.workAccCur || 0) + (c.workStart ? now - c.workStart : 0);
+  const d = Math.max(1, Math.round((work > 0 ? work : (c.stepAccCur || 0) + now - c.stepStart) / 1000));
   st.tempsReels = [d, ...st.tempsReels].slice(0, 5);
   c.results[c.i] = d; persist();
-  if (c.i >= c.r.etapes.length - 1) return endCook();
-  goStep(c.i + 1, true);
+  c.done = [...new Set([...(c.done || []), c.i])];
+  const j = nextIndex(c, c.i, false);
+  if (j < 0) return endCook();
+  goStep(j, true);
 }
+/* Étapes en attente : on en fait d'autres puis on y revient */
+const isDone = (c, i) => (c.done || []).includes(i);
+function nextIndex(c, from, skipHeld){
+  const n = c.r.etapes.length, held = c.held || {}, ok = j => j !== from && !isDone(c, j) && !(skipHeld && held[j]);
+  for (let j = from + 1; j < n; j++) if (ok(j)) return j;
+  for (let j = 0; j < from; j++) if (ok(j)) return j;
+  return -1;
+}
+function holdCurrent(c){
+  if (!c || c.i < 0 || isDone(c, c.i)) return;
+  const now = Date.now(); c.held = c.held || {};
+  c.held[c.i] = { t:c.t, stepAcc:(c.stepAccCur || 0) + (now - c.stepStart), workAcc:(c.workAccCur || 0) + (c.workStart ? now - c.workStart : 0) };
+}
+function holdStep(){
+  const c = S.cook; if (!c || c.i < 0) return;
+  const j = nextIndex(c, c.i, true);
+  if (j < 0) return say('Il n’y a pas d’autre étape à faire en attendant.', true);
+  const from = c.i; holdCurrent(c);
+  toast(`Étape ${from + 1} en attente${c.held[from].t && c.held[from].t.running ? ' : son minuteur continue' : ''}`);
+  goStep(j, true);
+}
+function jumpStep(i){
+  const c = S.cook; if (!c || !c.r.etapes[i]) return;
+  if (i === c.i) return;
+  if (c.i >= 0) holdCurrent(c);
+  goStep(i, !isDone(c, i) && !(c.held || {})[i]);
+}
+function heldBar(c){
+  const ks = Object.keys(c.held || {}).map(Number).sort((a, b) => a - b); if (!ks.length) return '';
+  return `<div class="heldbar">${ks.map(k => { const t = c.held[k].t; const tt = t && t.running ? `<b id="hb-${k}">${fmtClock((t.endAt - Date.now()) / 1000)}</b>` : t && t.done ? '<b>temps écoulé</b>' : ''; return `<button class="heldchip${t && t.done ? ' due' : ''}" data-act="go-step" data-i="${k}">⏸ Étape ${k + 1}${tt ? ' · ' + tt : ''}</button>`; }).join('')}</div>`;
+}
+function stepsSheet(){
+  const c = S.cook; if (!c) return;
+  sheet(`<h3>Étapes de la recette</h3><p>Touche une étape pour y aller : celle en cours est mise en attente, avec son minuteur qui continue.</p><div class="stack">${c.r.etapes.map((st, k) => { const s = k === c.i ? ['▶', 'en cours'] : isDone(c, k) ? ['✓', 'faite'] : (c.held || {})[k] ? ['⏸', 'en attente'] : ['○', 'à faire']; return `<button class="btn stepbtn${k === c.i ? ' cur' : ''}" data-act="go-step" data-i="${k}"><span>${s[0]}</span><span class="stxt"><b>Étape ${k + 1}</b> ${esc(firstWords(st.instruction, 8))}</span><small>${s[1]}${(c.count || {})[k] ? `, ${fmtQty(c.count[k])} pièces` : ''}</small></button>`; }).join('')}</div><div class="acts"><button class="btn" data-act="close-sheet">Fermer</button></div>`);
+}
+/* Compteur de pièces par étape */
+function addCount(n){
+  const c = S.cook; if (!c || c.i < 0 || !(n > 0)) return;
+  c.count = c.count || {}; c.count[c.i] = (c.count[c.i] || 0) + n; saveSession(false); render();
+  say(`${fmtQty(n)} de plus. Total : ${fmtQty(c.count[c.i])}${c.portions ? ` sur ${fmtQty(c.portions)}` : ''}.`, true);
+}
+function setCount(n){
+  const c = S.cook; if (!c || c.i < 0 || !(n >= 0)) return;
+  c.count = c.count || {}; c.count[c.i] = n; saveSession(false); render();
+  say(`Compteur à ${fmtQty(n)}.`, true);
+}
+function sayCount(){ const c = S.cook, n = (c && c.count && c.count[c.i]) || 0; say(n ? `Tu en as fait ${fmtQty(n)}${c.portions ? ` sur ${fmtQty(c.portions)}` : ''}.` : 'Le compteur est à zéro.', true); }
 function prevStep(){
   const c = S.cook; if (!c) return;
-  if (c.i <= 0) { stopAlarm(); c.i = -1; c.t = null; render(); return; }
-  goStep(c.i - 1);
+  if (c.i <= 0) { stopAlarm(); holdCurrent(c); c.i = -1; c.t = null; render(); return; }
+  holdCurrent(c);
+  goStep(c.i - 1, false);
 }
 function endCook(){
   const c = S.cook; dropSession(c.rid);
-  { const duree = (c.results || []).reduce((a, x) => a + (x || 0), 0); if (duree > 0) { S.cooks = S.cooks || []; S.cooks.push({ id:'k-' + uid(), rid:c.rid, titre:c.r.titre, portions:c.portions, fin:new Date().toISOString(), duree }); saveCooks(); } }
+  { const duree = (c.results || []).reduce((a, x) => a + (x || 0), 0); if (duree > 0) { S.cooks = S.cooks || []; S.cooks.push({ id:'k-' + uid(), rid:c.rid, titre:c.r.titre, portions:c.portions, fin:new Date().toISOString(), duree, pieces:c.count || {} }); saveCooks(); } }
   stopAlarm(); cancelNote(true); stopVoice(); keepAwake(false);
   c.t = null; c.matRes = recordMat(); S.screen = 'recap'; render(); window.scrollTo(0, 0);
   say('Recette terminée. Bon appétit !');
@@ -1014,7 +1107,7 @@ function saveSession(paused){
   const c = S.cook; if (!c || c.i < 0 || S.screen !== 'cook') return;
   const now = Date.now(), t = c.t ? { ...c.t, remaining:c.t.running ? Math.max(0, (c.t.endAt - now) / 1000) : c.t.remaining, running:false, endAt:0 } : null;
   const all = load(SESKEY, {});
-  all[c.rid] = { rid:c.rid, titre:c.r.titre, i:c.i, n:c.r.etapes.length, portions:c.portions, base:c.base, f:c.f, mat:c.mat, results:c.results, stepElapsed:now - c.stepStart, workElapsed:c.workStart ? now - c.workStart : null, t, paused:!!paused, savedAt:new Date().toISOString() };
+  all[c.rid] = { rid:c.rid, titre:c.r.titre, i:c.i, n:c.r.etapes.length, portions:c.portions, base:c.base, f:c.f, mat:c.mat, results:c.results, stepElapsed:(c.stepAccCur || 0) + now - c.stepStart, workElapsed:(c.workAccCur || 0) + (c.workStart ? now - c.workStart : 0), t, held:c.held || {}, done:c.done || [], count:c.count || {}, paused:!!paused, savedAt:new Date().toISOString() };
   store(SESKEY, all);
 }
 function dropSession(rid){ const all = load(SESKEY, {}); delete all[rid]; store(SESKEY, all); }
@@ -1029,8 +1122,9 @@ function resumeCook(rid){
   const s = load(SESKEY, {})[rid], r = find(rid);
   if (!s || !r || !r.etapes.length) { dropSession(rid); render(); return; }
   ensureAudio();
-  const now = Date.now(), i = Math.min(s.i, r.etapes.length - 1);
-  S.cook = { rid, r, i, t:s.t ? { ...s.t, running:false, endAt:0 } : null, stepStart:now - (s.stepElapsed || 0), workStart:s.workElapsed != null ? now - s.workElapsed : null, results:s.results || [], alarm:false, note:null, confirmEnd:0, base:s.base || r.portions || 1, portions:s.portions || r.portions || 1, f:s.f || 1, mats:allMat(r), mat:s.mat || {}, matRes:[] };
+  const now = Date.now(), i = Math.min(s.i, r.etapes.length - 1), held = s.held || {};
+  Object.values(held).forEach(h => { if (h.t && h.t.running && h.t.endAt <= now) { h.t.running = false; h.t.remaining = 0; h.t.done = true; } });
+  S.cook = { rid, r, i, t:s.t ? { ...s.t, running:false, endAt:0 } : null, stepStart:now, stepAccCur:s.stepElapsed || 0, workAccCur:s.workElapsed || 0, workStart:(s.workElapsed || 0) > 0 ? now : null, results:s.results || [], held, done:s.done || [], count:s.count || {}, alarm:false, note:null, confirmEnd:0, base:s.base || r.portions || 1, portions:s.portions || r.portions || 1, f:s.f || 1, mats:allMat(r), mat:s.mat || {}, matRes:[] };
   S.screen = 'cook'; render(); window.scrollTo(0, 0); keepAwake(true);
   if (SR) { if (V.state === 'denied') { V.state = 'off'; V.err = null; } startVoice(); }
   saveSession(false);
@@ -1127,6 +1221,7 @@ function updTimer(controls){
 setInterval(() => {
   const c0 = S.cook, ch = $('#chr');
   if (c0 && c0.workStart && ch) ch.textContent = fmtClock((Date.now() - c0.workStart) / 1000);
+  if (c0 && c0.held) Object.entries(c0.held).forEach(([k, h]) => { const t = h.t; if (!t || !t.running) return; const rem = (t.endAt - Date.now()) / 1000; const el = $('#hb-' + k); if (rem <= 0) { t.running = false; t.remaining = 0; t.done = true; if (S.screen === 'cook') render(); startAlarm(`Étape ${+k + 1} : le temps est écoulé`, +k); } else if (el) el.textContent = fmtClock(rem); });
   const c = S.cook; if (!c || !c.t || !c.t.running) return;
   const rem = (c.t.endAt - Date.now()) / 1000;
   if (rem <= 0) { c.t.running = false; c.t.remaining = 0; c.t.done = true; updTimer(true); startAlarm(); }
@@ -1135,12 +1230,13 @@ setInterval(() => {
 
 /* Alerte */
 function ring(){ beep(880, .18); setTimeout(() => beep(880, .18), 260); try { navigator.vibrate && navigator.vibrate([260, 120, 260]); } catch (e) {} }
-function startAlarm(){
+function startAlarm(msg, stepIdx){
   const c = S.cook; if (!c || c.alarm) return;
-  c.alarm = true; renderAlarm(); ring();
+  c.alarm = true; c.alarmMsg = msg || 'Le temps imparti est écoulé'; c.alarmStep = stepIdx == null ? null : stepIdx;
+  renderAlarm(); ring();
   c.alarmIv = setInterval(ring, 1600);
-  say('Le temps imparti est écoulé.', true);
-  c.alarmSay = setInterval(() => say('Le temps imparti est écoulé.', true), 12000);
+  say(c.alarmMsg + '.', true);
+  c.alarmSay = setInterval(() => say(c.alarmMsg + '.', true), 12000);
 }
 function stopAlarm(){
   const c = S.cook; if (!c) return;
@@ -1150,7 +1246,8 @@ function stopAlarm(){
 }
 function renderAlarm(){
   const host = $('#alarm-host'), c = S.cook;
-  host.innerHTML = c && c.alarm && S.screen === 'cook' ? `<div class="alarm" role="alert"><b>Le temps imparti est écoulé</b><span>L’étape reste affichée : dis « étape terminée » quand tu as fini.</span><div class="row2"><button class="btn" data-act="alarm-stop">Arrêter l’alerte</button><button class="btn" data-act="t-add">+1 min</button></div></div>` : '';
+  const other = c && c.alarmStep != null && c.alarmStep !== c.i;
+  host.innerHTML = c && c.alarm && S.screen === 'cook' ? `<div class="alarm" role="alert"><b>${esc(c.alarmMsg || 'Le temps imparti est écoulé')}</b><span>${other ? 'Cette étape était en attente.' : 'L’étape reste affichée : dis « étape terminée » quand tu as fini.'}</span><div class="row2"><button class="btn" data-act="alarm-stop">Arrêter l’alerte</button>${other ? `<button class="btn" data-act="go-step" data-i="${c.alarmStep}">Aller à l’étape ${c.alarmStep + 1}</button>` : '<button class="btn" data-act="t-add">+1 min</button>'}</div></div>` : '';
 }
 
 /* Annotations dictées en cuisson */
@@ -1503,15 +1600,17 @@ function vCook(){
   const st = r.etapes[c.i], next = r.etapes[c.i + 1], t = c.t;
   const timer = t ? `<div class="timer${t.done ? ' done' : ''}" id="timer"><div class="dial"><svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="tgrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--g1)"/><stop offset="1" style="stop-color:var(--g2)"/></linearGradient></defs><circle class="track" cx="60" cy="60" r="54" fill="none" stroke-width="10"/><circle id="tfill" class="fill" cx="60" cy="60" r="54" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="${RING}" stroke-dashoffset="${RING * (1 - t.remaining / t.total)}"/></svg><div class="t" id="tval" role="timer">${fmtClock(t.remaining)}</div></div><div><p class="tlabel">Temps estimé${c.f !== 1 ? ` pour ${plural(c.portions, 'portion')}` : ''} : ${fmtDur(t.base)}</p><div class="ctl" id="tctl">${ctlHtml(t)}</div></div></div>`
     : `<div class="timer"><div><p class="tlabel">Pas de temps prévu pour cette étape</p><div class="ctl">${c.workStart ? `<span class="chrono">Chrono <b id="chr">${fmtClock((Date.now() - c.workStart) / 1000)}</b></span>` : `<button class="btn mini primary" data-act="t-start">Démarrer</button>`}<button class="btn mini" data-act="t-add">Minuteur d’1 min</button></div></div></div>`;
-  return top + `<div class="progress"><i style="width:${(c.i / n) * 100}%"></i></div>
-  <p class="stepno">Étape ${c.i + 1} sur ${n}</p>
+  const nDone = (c.done || []).length, cnt = (c.count || {})[c.i] || 0;
+  return top + `${heldBar(c)}<div class="progress"><i style="width:${(nDone / n) * 100}%"></i></div>
+  <p class="stepno">Étape ${c.i + 1} sur ${n}${nDone ? `, ${nDone} ${nDone > 1 ? 'faites' : 'faite'}` : ''}</p>
   <p class="instr">${stepRender(st, r, c.f, c.i, true)}</p>
   ${(si => si.length ? `<div class="chips"><span class="chiplab">Ingrédients</span>${si.map(x => `<span class="chip">${esc(scaleIngr(x, c.f))}</span>`).join('')}</div>` : '')(stepIngr(r, st))}
   ${(sm => sm.length ? `<div class="chips"><span class="chiplab">Matériel</span>${sm.map(x => { const key = (c.mats || []).find(m => norm(m) === norm(x)); const v = key ? c.mat[key] : ''; return `<span class="chip tool">${esc(x)}${v ? ` : ${esc(v)}` : ''}</span>`; }).join('')}</div>` : '')(stepMat(r, st))}
   ${st.notes.map((x, k) => `<div class="notebox"><span class="ntext">${esc(x)}</span><span class="nbtns"><button class="iconbtn" data-act="cnote-edit" data-n="${k}" aria-label="Modifier la note">✎</button><button class="iconbtn" data-act="cnote-del" data-n="${k}" aria-label="Supprimer la note">✕</button></span></div>`).join('')}
   ${timer}
+  <div class="counter"><div class="cval"><span>Pièces faites</span><b id="cntv">${fmtQty(cnt)}</b>${c.portions ? `<small>/ ${fmtQty(c.portions)}</small>` : ''}</div><div class="cctl"><input id="cnt-in" class="porin small" type="number" inputmode="numeric" min="1" placeholder="50" aria-label="Pièces à ajouter"><button class="btn mini primary" data-act="cnt-add">Ajouter</button>${cnt ? '<button class="btn mini" data-act="cnt-reset">Remettre à 0</button>' : ''}</div></div>
   ${st.tempsReels.length ? `<p class="past">Les dernières fois : ${st.tempsReels.map(fmtDur).join(', ')}</p>` : ''}
-  <div class="row-btns"><button class="btn mini" data-act="note">${SR && V.state === 'on' ? 'Dicter une note' : 'Ajouter une note'}</button><button class="btn mini" data-act="repeat">Relire l’étape</button>${(r.photos || []).length ? `<button class="btn mini" data-act="photo-view" data-id="${esc(r.photos[0])}">Recette d’origine</button>` : ''}</div>
+  <div class="row-btns"><button class="btn mini" data-act="note">${SR && V.state === 'on' ? 'Dicter une note' : 'Ajouter une note'}</button><button class="btn mini" data-act="repeat">Relire l’étape</button><button class="btn mini" data-act="hold-step">Mettre en attente</button><button class="btn mini" data-act="steps-list">Toutes les étapes</button>${(r.photos || []).length ? `<button class="btn mini" data-act="photo-view" data-id="${esc(r.photos[0])}">Recette d’origine</button>` : ''}</div>
   <p class="next">${next ? `Ensuite : ${esc(firstWords(next.instruction, 12))}` : 'C’est la dernière étape.'}</p>
   <div class="cookbar"><button class="btn back-btn" data-act="prev" aria-label="Étape précédente">‹</button><button class="btn primary done-btn" data-act="next">Étape terminée</button></div>`;
 }
@@ -1524,6 +1623,7 @@ function vRecap(){
   <tbody>${r.etapes.map((e, i) => `<tr><td>${i + 1}. ${esc(firstWords(e.instruction, 6))}</td><td class="n">${e.temps ? fmtDur(Math.max(1, Math.round(e.temps * c.f))) : '—'}</td><td class="n">${c.results[i] ? fmtDur(c.results[i]) : '—'}</td></tr>`).join('')}</tbody>
   <tfoot><tr><td>Total</td><td class="n">${est ? fmtDur(est) : '—'}</td><td class="n">${fmtDur(tot)}</td></tr></tfoot></table></div>
   ${c.matRes && c.matRes.length ? `<h3 class="sub">Matériel</h3><ul class="gaps">${c.matRes.map(x => `<li>${esc(x.m)} (${esc(x.v)}) : ${gapText(x.gap)} sur ses étapes cette fois</li>`).join('')}</ul>` : ''}
+  ${Object.keys(c.count || {}).length ? `<p class="hint">Pièces faites : ${Object.entries(c.count).filter(([, n]) => n > 0).map(([k, n]) => `étape ${+k + 1} : ${fmtQty(n)}`).join(', ')}</p>` : ''}
   <p class="hint">Chaque temps réel est enregistré dans le fichier de la recette ; seuls les 5 derniers sont gardés par étape.</p>
   <div class="stack"><button class="btn primary" data-act="home">Retour à l’accueil</button><button class="btn" data-act="export" data-id="${r.id}">Exporter le fichier</button></div>`;
 }
@@ -1817,6 +1917,11 @@ document.addEventListener('click', async e => {
     case 'export-template': exportText('modele.recette.txt', TEMPLATE); break;
     case 'cook': openCook(id); break;
     case 'cook-pause': pauseCook(); break;
+    case 'hold-step': holdStep(); break;
+    case 'steps-list': stepsSheet(); break;
+    case 'go-step': stopAlarm(); jumpStep(+b.dataset.i); break;
+    case 'cnt-add': { const n = parseFloat(String(($('#cnt-in') || {}).value || '').replace(',', '.')); if (n > 0) addCount(n); else toast('Indique un nombre de pièces.'); break; }
+    case 'cnt-reset': { const ok = await ask('Remettre le compteur à zéro ?', '', [{ label:'Remettre à 0', value:true, kind:'danger' }, { label:'Annuler', value:false }]); if (ok) setCount(0); break; }
     case 'cnote-edit': { const st = S.cook && S.cook.r.etapes[S.cook.i]; if (!st || st.notes[k] == null) break; sheet(`<h3>Modifier la note</h3><textarea id="cn-text" rows="4">${esc(st.notes[k])}</textarea><div class="acts"><button class="btn primary" data-act="cnote-save" data-n="${k}">Enregistrer</button>${SR ? `<button class="btn" data-act="cnote-dict" data-n="${k}">Redicter la note</button>` : ''}<button class="btn danger" data-act="cnote-del" data-n="${k}">Supprimer la note</button><button class="btn" data-act="close-sheet">Annuler</button></div>`); break; }
     case 'cnote-save': { const st = S.cook && S.cook.r.etapes[S.cook.i]; if (!st || st.notes[k] == null) break; const tx = (sheetVals['cn-text'] || '').trim(); if (tx) st.notes[k] = tx; else st.notes.splice(k, 1); persist(); render(); toast(tx ? 'Note modifiée' : 'Note supprimée'); break; }
     case 'cnote-dict': { const st = S.cook && S.cook.r.etapes[S.cook.i]; if (!st || st.notes[k] == null) break; st.notes.splice(k, 1); persist(); render(); startNote(); break; }
