@@ -373,6 +373,14 @@ a.btn{text-decoration:none;color:inherit}
 .lready{flex:none;width:30px;height:30px;border-radius:8px;border:2px solid var(--herb);background:var(--surface);color:#fff;font-weight:800;font-size:16px;cursor:pointer;padding:0}
 .lready[aria-pressed="true"]{background:#2e9e5a;border-color:#2e9e5a}
 
+.olines li.ol{display:block}
+.olrow{display:flex;justify-content:space-between;gap:10px}
+.lflags{display:flex;gap:6px;margin:6px 0 2px;flex-wrap:wrap}
+.lflag{border:1.5px solid var(--line);background:var(--surface);color:var(--muted);border-radius:999px;padding:4px 11px;font-size:13px;font-weight:700;cursor:pointer;min-height:32px}
+.lflag.on{background:#2e9e5a;border-color:#2e9e5a;color:#fff}
+.lstate{font-size:13px;color:var(--muted);margin-top:2px}
+.badge.b-historisee{background:rgba(120,120,120,.2)}
+
 /* Thème bleu canard */
 body{background:var(--bg-grad);min-height:100vh}
 .btn.primary,.choice.launch,.tabs button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
@@ -391,7 +399,7 @@ body{background:var(--bg-grad);min-height:100vh}
 <div id="note-host"></div>
 <script>
 'use strict';
-const APP_VERSION = '1.46';
+const APP_VERSION = '1.47';
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1904,7 +1912,7 @@ document.addEventListener('click', async e => {
     case 'order-save': {
       captureOrderDraft(); const o = S.odraft;
       if (!o.clientId || !findClient(o.clientId)) { toast('Choisis un client.'); break; }
-      const lignes = Object.entries(o.q).filter(([rid, n]) => n > 0 && find(rid)).map(([rid, n]) => { const old = ((findOrder(o.id) || {}).lignes || []).find(x => x.rid === rid) || {}; return { rid, titre:find(rid).titre, qte:n, pu:find(rid).prixVente > 0 ? find(rid).prixVente : null, prete:!!old.prete && old.qte === n, preteLe:old.qte === n ? (old.preteLe || '') : '' }; });
+      const lignes = Object.entries(o.q).filter(([rid, n]) => n > 0 && find(rid)).map(([rid, n]) => { const old = ((findOrder(o.id) || {}).lignes || []).find(x => x.rid === rid) || {}; return { rid, titre:find(rid).titre, qte:n, pu:find(rid).prixVente > 0 ? find(rid).prixVente : null, prete:!!old.prete && old.qte === n, preteLe:old.qte === n ? (old.preteLe || '') : '', payee:!!old.payee && old.qte === n, payeeLe:old.qte === n ? (old.payeeLe || '') : '', livree:!!old.livree && old.qte === n, livreeLe:old.qte === n ? (old.livreeLe || '') : '' }; });
       if (!lignes.length) { toast('Indique au moins une quantité.'); break; }
       const prev = findOrder(o.id), rec = { id:o.id, clientId:o.clientId, clientNom:clientName(findClient(o.clientId)), date:prev ? prev.date : new Date().toISOString(), livraison:o.livraison || '', statut:prev ? prev.statut : 'attente', livreeLe:prev ? prev.livreeLe : '', lignes, note:(o.note || '').trim() };
       syncOrderStatus(rec);
@@ -1913,10 +1921,12 @@ document.addEventListener('click', async e => {
     }
     case 'order-ready': { const o = findOrder(id); if (!o) break; setLinesReady(o, true); saveOrders(); render(); toast('Commande prête à livrer'); break; }
     case 'order-unready': { const o = findOrder(id); if (!o) break; setLinesReady(o, false); saveOrders(); render(); toast('Commande remise à préparer'); break; }
+    case 'line-flag': { const o = findOrder(id), l = o && (o.lignes || [])[+b.dataset.i], f = b.dataset.f; if (!l || !['prete', 'payee', 'livree'].includes(f)) break; const now = new Date().toISOString(); l[f] = !l[f]; l[f + 'Le'] = l[f] ? now : ''; if (f === 'livree' && l.livree && !l.prete) { l.prete = true; l.preteLe = now; } saveOrders(); render(); const ls = o.lignes || []; toast(ls.every(x => x.livree) && ls.every(x => x.payee) ? 'Tout est livré et payé : tu peux historiser la commande' : `${lineTitle(l)} : ${l[f] ? '' : 'pas '}${{ prete:'prête', payee:'payée', livree:'livrée' }[f]}`); break; }
+    case 'order-archive': { const o = findOrder(id); if (!o) break; const ls = o.lignes || [], left = ls.filter(l => !l.livree || !l.payee).length; if (left) { const ok = await ask('Historiser cette commande ?', `${plural(left, 'ligne')} ${left > 1 ? 'ne sont pas' : 'n’est pas'} encore livrée${left > 1 ? 's' : ''} ou payée${left > 1 ? 's' : ''}.`, [{ label:'Historiser quand même', value:true, kind:'primary' }, { label:'Annuler', value:false }]); if (!ok) break; } o.statut = 'historisee'; o.historiseeLe = new Date().toISOString(); saveOrders(); render(); toast('Commande historisée'); break; }
     case 'line-ready': { const o = findOrder(id), l = o && (o.lignes || [])[+b.dataset.i]; if (!l) break; l.prete = !l.prete; l.preteLe = l.prete ? new Date().toISOString() : ''; const before = o.statut; syncOrderStatus(o); saveOrders(); render(); toast(o.statut === 'prete' && before !== 'prete' ? 'Toutes les lignes sont prêtes : commande prête à livrer' : l.prete ? `${lineTitle(l)} : prête` : `${lineTitle(l)} : à préparer`); break; }
-    case 'orders-ready-recipe': { const rid = b.dataset.id; let n = 0, full = 0; pendingOrders().forEach(o => { if ((o.lignes || []).some(l => l.rid === rid && !l.prete)) { setLinesReady(o, true, rid); n++; if (o.statut === 'prete') full++; } }); saveOrders(); render(); toast(n ? `${plural(n, 'ligne')} ${n > 1 ? 'marquées prêtes' : 'marquée prête'}${full ? `, ${plural(full, 'commande')} ${full > 1 ? 'complètes' : 'complète'}` : ''}` : 'Aucune ligne à marquer'); break; }
+    case 'orders-ready-recipe': { const rid = b.dataset.id; let n = 0, full = 0; pendingOrders().forEach(o => { if ((o.lignes || []).some(l => l.rid === rid && !l.prete)) { setLinesReady(o, true, rid); n++; if ((o.lignes || []).every(l => l.prete)) full++; } }); saveOrders(); render(); toast(n ? `${plural(n, 'ligne')} ${n > 1 ? 'marquées prêtes' : 'marquée prête'}${full ? `, ${plural(full, 'commande')} ${full > 1 ? 'complètes' : 'complète'}` : ''}` : 'Aucune ligne à marquer'); break; }
     case 'order-done': { const o = findOrder(id); if (!o) break; o.statut = 'livree'; o.livreeLe = new Date().toISOString(); saveOrders(); render(); toast('Commande marquée livrée'); break; }
-    case 'order-reopen': { const o = findOrder(id); if (!o) break; o.statut = 'attente'; o.livreeLe = ''; syncOrderStatus(o); saveOrders(); render(); toast(o.statut === 'prete' ? 'Commande remise en « prête »' : 'Commande remise en attente'); break; }
+    case 'order-reopen': { const o = findOrder(id); if (!o) break; o.statut = 'attente'; o.historiseeLe = ''; saveOrders(); render(); toast('Commande remise en cours'); break; }
     case 'order-cancel': { const o = findOrder(id); if (!o) break; const ok = await ask('Annuler cette commande ?', 'Elle restera visible dans l’historique.', [{ label:'Annuler la commande', value:true, kind:'danger' }, { label:'Garder', value:false }]); if (ok) { o.statut = 'annulee'; saveOrders(); render(); } break; }
     case 'order-del': { const ok = await ask('Supprimer définitivement ?', 'La commande disparaîtra aussi de l’historique.', [{ label:'Supprimer', value:true, kind:'danger' }, { label:'Garder', value:false }]); if (ok) { S.orders = S.orders.filter(o => o.id !== id); saveOrders(); render(); } break; }
     case 'shop-orders': shopFromOrders(); render(); break;
@@ -3198,17 +3208,19 @@ const DAY = 864e5;
 function orderTime(o){ const t = new Date(o.livraison ? o.livraison + 'T12:00:00' : (o.livreeLe || o.date)).getTime(); return isNaN(t) ? null : t; }
 function profitGroups(){
   const smic = S.settings.smic > 0 ? S.settings.smic : 12.31, fh = S.settings.forfaitH >= 0 ? S.settings.forfaitH : 3;
-  const done = S.orders.filter(o => o.statut === 'livree').map(o => ({ o, t:orderTime(o) })).filter(x => x.t != null).sort((a, b) => a.t - b.t);
+  const ent = [];
+  S.orders.forEach(o => { if (o.statut === 'annulee') return; (o.lignes || []).forEach(l => { if (!l.livree) return; const t = new Date(l.livreeLe || (o.livraison ? o.livraison + 'T12:00:00' : o.date)).getTime(); if (!isNaN(t)) ent.push({ o, l, t }); }); });
+  ent.sort((a, b) => a.t - b.t);
   const groups = [];
-  done.forEach(x => { const g = groups[groups.length - 1]; if (g && x.t - g.start <= 3 * DAY) { g.items.push(x.o); g.end = x.t; } else groups.push({ start:x.t, end:x.t, items:[x.o] }); });
+  ent.forEach(x => { const g = groups[groups.length - 1]; if (g && x.t - g.start <= 3 * DAY) { g.items.push(x); g.end = x.t; } else groups.push({ start:x.t, end:x.t, items:[x] }); });
   const used = new Set();
   groups.forEach(g => {
     g.cooks = (S.cooks || []).filter(k => { const t = new Date(k.fin).getTime(); if (used.has(k.id) || isNaN(t) || t < g.start - 3 * DAY || t > g.end + DAY) return false; used.add(k.id); return true; });
     let ca = 0, dep = 0, miss = 0, estS = 0; const byR = {};
-    g.items.forEach(o => (o.lignes || []).forEach(l => { const r = find(l.rid), q = +l.qte || 0, pu = l.pu > 0 ? l.pu : (r && r.prixVente > 0 ? r.prixVente : 0); ca += pu * q; byR[l.rid] = (byR[l.rid] || 0) + q; }));
+    g.items.forEach(({ l }) => { const r = find(l.rid), q = +l.qte || 0, pu = l.pu > 0 ? l.pu : (r && r.prixVente > 0 ? r.prixVente : 0); ca += pu * q; byR[l.rid] = (byR[l.rid] || 0) + q; });
     Object.entries(byR).forEach(([rid, q]) => { const r = find(rid); if (!r) return; const f = q / (r.portions || 1); if (S.prices.length) { const k = recipeCost(r, f); dep += k.total; miss += k.unknown; } else miss += allIngr(r).length; estS += estTotal(r) * f; });
     const realS = g.cooks.reduce((a, k) => a + (+k.duree || 0), 0);
-    Object.assign(g, { ca, dep, miss, byR, realS, estS, cookS:realS || estS, estimated:!realS, smic, fh });
+    Object.assign(g, { ca, dep, miss, byR, realS, estS, cookS:realS || estS, estimated:!realS, smic, fh, nOrders:new Set(g.items.map(x => x.o.id)).size });
     g.h = g.cookS / 3600 + fh; g.mo = g.h * smic; g.rent = ca - dep - g.mo;
   });
   return groups.reverse();
@@ -3219,7 +3231,7 @@ function vProfit(){
   const titleOf = rid => { const r = find(rid); if (r) return r.titre; const l = S.orders.flatMap(o => o.lignes || []).find(x => x.rid === rid); return (l && l.titre) || 'Recette supprimée'; };
   const row = (a, b, cls = '') => `<tr class="${cls}"><td>${a}</td><td>${b}</td></tr>`;
   const money = (v, neg) => `${neg ? '− ' : ''}${fmtEuro(v)}`;
-  const card = g => `<div class="mrow"><div class="ohead"><b>${g.start === g.end || fmtDateFr(new Date(g.start).toISOString().slice(0, 10)) === fmtDateFr(new Date(g.end).toISOString().slice(0, 10)) ? `Livraison du ${fmtDateFr(new Date(g.start).toISOString().slice(0, 10))}` : `Livraisons du ${fmtDateFr(new Date(g.start).toISOString().slice(0, 10))} au ${fmtDateFr(new Date(g.end).toISOString().slice(0, 10))}`}</b><span class="badge">${plural(g.items.length, 'commande')}</span></div>
+  const card = g => `<div class="mrow"><div class="ohead"><b>${g.start === g.end || fmtDateFr(new Date(g.start).toISOString().slice(0, 10)) === fmtDateFr(new Date(g.end).toISOString().slice(0, 10)) ? `Livraison du ${fmtDateFr(new Date(g.start).toISOString().slice(0, 10))}` : `Livraisons du ${fmtDateFr(new Date(g.start).toISOString().slice(0, 10))} au ${fmtDateFr(new Date(g.end).toISOString().slice(0, 10))}`}</b><span class="badge">${plural(g.nOrders, 'commande')}</span></div>
     <small>${Object.entries(g.byR).map(([rid, q]) => `${esc(titleOf(rid))} × ${fmtQty(q)}`).join(', ')}</small>
     <div class="scroll" style="margin:8px 0 0"><table class="ptab">
     ${row('Total commandes', money(g.ca))}
@@ -3229,8 +3241,8 @@ function vProfit(){
     ${row('Rentabilité', `<b class="${g.rent >= 0 ? 'pos' : 'neg'}">${fmtEuro(g.rent)}</b>`, 'tot')}
     </table></div></div>`;
   return `<div class="topbar"><button class="btn ghost" data-act="go-history">‹ Historique</button><h2>Rentabilité</h2></div>
-  <p class="hint" style="margin-top:0">Commandes livrées, regroupées quand elles sont à moins de 3 jours d’écart. Rentabilité = total des commandes − dépenses en ingrédients − (durée de cuisine + ${fmtQty(fh)} h) × ${fmtEuro(smic)} de l’heure. Taux et forfait se changent dans Paramétrage.</p>
-  ${gs.length ? `<div class="mrow"><b>Toutes les commandes livrées</b><div class="scroll" style="margin:8px 0 0"><table class="ptab">${row('Total commandes', money(tot.ca))}${row('Total dépenses', money(tot.dep, true))}${row('Main-d’œuvre', money(tot.mo, true))}${row('Rentabilité', `<b class="${tot.rent >= 0 ? 'pos' : 'neg'}">${fmtEuro(tot.rent)}</b>`, 'tot')}</table></div></div>${gs.map(card).join('')}` : '<div class="empty"><p>Aucune commande livrée pour l’instant. Passe une commande en « Livrée » pour voir sa rentabilité.</p></div>'}
+  <p class="hint" style="margin-top:0">Lignes de commande livrées, regroupées quand elles sont à moins de 3 jours d’écart. Rentabilité = total des commandes − dépenses en ingrédients − (durée de cuisine + ${fmtQty(fh)} h) × ${fmtEuro(smic)} de l’heure. Taux et forfait se changent dans Paramétrage.</p>
+  ${gs.length ? `<div class="mrow"><b>Tout ce qui a été livré</b><div class="scroll" style="margin:8px 0 0"><table class="ptab">${row('Total commandes', money(tot.ca))}${row('Total dépenses', money(tot.dep, true))}${row('Main-d’œuvre', money(tot.mo, true))}${row('Rentabilité', `<b class="${tot.rent >= 0 ? 'pos' : 'neg'}">${fmtEuro(tot.rent)}</b>`, 'tot')}</table></div></div>${gs.map(card).join('')}` : '<div class="empty"><p>Aucune commande livrée pour l’instant. Passe une commande en « Livrée » pour voir sa rentabilité.</p></div>'}
   <p class="hint">La durée effective vient des recettes que tu as cuisinées jusqu’au bout dans l’application, entre 3 jours avant et 1 jour après les livraisons. Sans cuisson enregistrée, elle est estimée d’après les temps prévus des recettes.</p>`;
 }
 
@@ -3238,16 +3250,12 @@ const saveClients = () => stampList(CKEY, S.clients, c => c.id, 'client'), saveO
 const clientName = c => c ? ([c.prenom, c.nom].filter(x => x && String(x).trim()).join(' ') || 'Client sans nom') : 'Client supprimé';
 const findClient = id => S.clients.find(c => c.id === id);
 const findOrder = id => S.orders.find(o => o.id === id);
-const pendingOrders = () => S.orders.filter(o => o.statut === 'attente');
-const readyOrders = () => S.orders.filter(o => o.statut === 'prete');
+const isActive = o => o.statut === 'attente' || o.statut === 'prete';
+const pendingOrders = () => S.orders.filter(isActive);
+const readyOrders = () => S.orders.filter(o => isActive(o) && (o.lignes || []).length && (o.lignes || []).every(l => l.prete) && !(o.lignes || []).every(l => l.livree));
 function pendingByRecipe(){ const m = {}; pendingOrders().forEach(o => (o.lignes || []).forEach(l => { if (!l.prete) m[l.rid] = (m[l.rid] || 0) + (+l.qte || 0); })); return m; }
 /* « Prête » ligne par ligne : la commande est prête quand toutes ses lignes le sont */
-function syncOrderStatus(o){
-  if (!o || o.statut === 'livree' || o.statut === 'annulee') return;
-  const ls = o.lignes || [], all = ls.length > 0 && ls.every(l => l.prete);
-  if (all && o.statut !== 'prete') { o.statut = 'prete'; o.preteLe = new Date().toISOString(); }
-  else if (!all && o.statut === 'prete') o.statut = 'attente';
-}
+function syncOrderStatus(o){ if (o && o.statut === 'prete') o.statut = 'attente'; }
 function setLinesReady(o, ready, rid){
   const now = new Date().toISOString();
   (o.lignes || []).forEach(l => { if (rid && l.rid !== rid) return; l.prete = ready; l.preteLe = ready ? (l.preteLe || now) : ''; });
@@ -3290,25 +3298,35 @@ function vClients(){
   <div id="crows">${clientRows()}</div>`;
 }
 function orderCard(o){
-  const c = findClient(o.clientId), lignes = o.lignes || [], tot = lignes.reduce((a, l) => a + (+l.qte || 0), 0);
+  const c = findClient(o.clientId), lignes = o.lignes || [], n = lignes.length, tot = lignes.reduce((a, l) => a + (+l.qte || 0), 0);
   const puOf = l => { const r = find(l.rid); return l.pu > 0 ? l.pu : (r && r.prixVente > 0 ? r.prixVente : 0); };
-  const montant = lignes.reduce((a, l) => { const r = find(l.rid), pu = l.pu > 0 ? l.pu : (r && r.prixVente > 0 ? r.prixVente : 0); return a + pu * (+l.qte || 0); }, 0);
-  const st = { attente:'En attente', prete:'Prête', livree:'Livrée', annulee:'Annulée' }[o.statut] || o.statut;
-  return `<div class="mrow"><div class="ohead"><b>${esc(c ? clientName(c) : (o.clientNom || 'Client supprimé'))}</b><span class="badge b-${o.statut}">${o.statut === 'attente' && lignes.some(l => l.prete) ? `${lignes.filter(l => l.prete).length}/${lignes.length} prêtes` : st}</span></div>
-  <small>${o.livraison ? `Pour le ${fmtD(o.livraison)}, ` : ''}passée le ${fmtD(o.date)}${o.preteLe && (o.statut === 'prete' || o.statut === 'livree') ? `, prête le ${fmtD(o.preteLe)}` : ''}${o.statut === 'livree' && o.livreeLe ? `, livrée le ${fmtD(o.livreeLe)}` : ''}</small>
-  <ul class="olines">${lignes.map((l, k) => { const q = +l.qte || 0, pu = puOf(l), open = o.statut === 'attente' || o.statut === 'prete'; return `<li class="${l.prete ? 'lok' : ''}">${open ? `<button class="lready" data-act="line-ready" data-id="${o.id}" data-i="${k}" aria-pressed="${!!l.prete}" aria-label="${l.prete ? 'Ligne prête : toucher pour annuler' : 'Marquer cette ligne prête'}">${l.prete ? '✓' : ''}</button>` : ''}<span class="ltitle">${esc(lineTitle(l))}${l.prete && open ? ' <small>prête</small>' : ''}</span><span class="ocalc">${fmtQty(q)}${pu ? ` × ${fmtEuro(pu)} = <b>${fmtEuro(q * pu)}</b>` : ''}</span></li>`; }).join('')}</ul>
-  ${montant > 0 ? `<div class="ototal"><span>${pcs(tot)}</span><b>Total ${fmtEuro(montant)}</b></div>` : `<small>${pcs(tot)}</small>`}${o.note ? `<small>${esc(o.note)}</small>` : ''}
-  <div class="mbtns">${o.statut === 'attente' ? `<button class="btn mini primary" data-act="order-ready" data-id="${o.id}">Prête</button><button class="btn mini" data-act="order-done" data-id="${o.id}">Livrée</button><button class="btn mini" data-act="order-edit" data-id="${o.id}">Modifier</button><button class="btn mini danger" data-act="order-cancel" data-id="${o.id}">Annuler</button>` : o.statut === 'prete' ? `<button class="btn mini primary" data-act="order-done" data-id="${o.id}">Livrée</button><button class="btn mini" data-act="order-unready" data-id="${o.id}">Pas prête</button><button class="btn mini" data-act="order-edit" data-id="${o.id}">Modifier</button><button class="btn mini danger" data-act="order-cancel" data-id="${o.id}">Annuler</button>` : `<button class="btn mini" data-act="order-reopen" data-id="${o.id}">Remettre en attente</button><button class="btn mini danger" data-act="order-del" data-id="${o.id}">Supprimer</button>`}</div></div>`;
+  const amt = l => puOf(l) * (+l.qte || 0);
+  const montant = lignes.reduce((a, l) => a + amt(l), 0), paye = lignes.filter(l => l.payee).reduce((a, l) => a + amt(l), 0);
+  const active = isActive(o), cnt = f => lignes.filter(l => l[f]).length;
+  const st = active ? (n && cnt('livree') === n ? 'Livrée' : n && cnt('prete') === n ? 'Prête' : 'En cours') : ({ historisee:'Historisée', annulee:'Annulée', livree:'Livrée' }[o.statut] || o.statut);
+  const cls = active ? (n && cnt('livree') === n ? 'livree' : n && cnt('prete') === n ? 'prete' : 'attente') : o.statut;
+  const flag = (l, k, f, label) => `<button class="lflag${l[f] ? ' on' : ''}" data-act="line-flag" data-id="${o.id}" data-i="${k}" data-f="${f}" aria-pressed="${!!l[f]}">${l[f] ? '✓ ' : ''}${label}</button>`;
+  const lab = { prete:'prête', payee:'payée', livree:'livrée' };
+  return `<div class="mrow"><div class="ohead"><b>${esc(c ? clientName(c) : (o.clientNom || 'Client supprimé'))}</b><span class="badge b-${cls}">${st}</span></div>
+  <small>${o.livraison ? `Pour le ${fmtD(o.livraison)}, ` : ''}passée le ${fmtD(o.date)}${o.statut === 'historisee' && o.historiseeLe ? `, historisée le ${fmtD(o.historiseeLe)}` : ''}</small>
+  <ul class="olines">${lignes.map((l, k) => { const q = +l.qte || 0, pu = puOf(l); return `<li class="ol"><div class="olrow"><span class="ltitle">${esc(lineTitle(l))}</span><span class="ocalc">${fmtQty(q)}${pu ? ` × ${fmtEuro(pu)} = <b>${fmtEuro(q * pu)}</b>` : ''}</span></div>${active ? `<div class="lflags">${flag(l, k, 'prete', 'Prête')}${flag(l, k, 'payee', 'Payée')}${flag(l, k, 'livree', 'Livrée')}</div>` : `<div class="lstate">${['prete', 'payee', 'livree'].filter(f => l[f]).map(f => lab[f]).join(', ') || 'ni prête, ni payée, ni livrée'}</div>`}</li>`; }).join('')}</ul>
+  ${montant > 0 ? `<div class="ototal"><span>${pcs(tot)}${paye >= montant - 0.005 ? ', tout est payé' : paye > 0 ? `, payé ${fmtEuro(paye)}, reste ${fmtEuro(montant - paye)}` : ', rien de payé'}</span><b>Total ${fmtEuro(montant)}</b></div>` : `<small>${pcs(tot)}</small>`}
+  ${active && n ? `<small>Prêtes ${cnt('prete')}/${n}, payées ${cnt('payee')}/${n}, livrées ${cnt('livree')}/${n}</small>` : ''}${o.note ? `<small>${esc(o.note)}</small>` : ''}
+  <div class="mbtns">${active ? `<button class="btn mini${n && cnt('livree') === n && cnt('payee') === n ? ' primary' : ''}" data-act="order-archive" data-id="${o.id}">Historiser</button><button class="btn mini" data-act="order-edit" data-id="${o.id}">Modifier</button><button class="btn mini danger" data-act="order-cancel" data-id="${o.id}">Annuler</button>` : `<button class="btn mini" data-act="order-reopen" data-id="${o.id}">Remettre en cours</button><button class="btn mini danger" data-act="order-del" data-id="${o.id}">Supprimer</button>`}</div></div>`;
 }
 function vOrders(){
   const byDate = (a, b) => String(a.livraison || a.date).localeCompare(String(b.livraison || b.date));
-  const pend = pendingOrders().sort(byDate), ready = readyOrders().sort(byDate);
+  const act = S.orders.filter(isActive).sort(byDate), all = (o, f) => (o.lignes || []).length > 0 && (o.lignes || []).every(l => l[f]);
+  const done = act.filter(o => all(o, 'livree')), ready = act.filter(o => !all(o, 'livree') && all(o, 'prete')), todo = act.filter(o => !all(o, 'livree') && !all(o, 'prete'));
+  const due = act.reduce((a, o) => a + (o.lignes || []).filter(l => !l.payee).reduce((x, l) => { const r = find(l.rid), pu = l.pu > 0 ? l.pu : (r && r.prixVente > 0 ? r.prixVente : 0); return x + pu * (+l.qte || 0); }, 0), 0);
+  const sec = (title, list, empty) => `<h3 class="sub">${title} (${list.length})</h3>${list.length ? list.map(orderCard).join('') : `<p class="hint" style="margin-top:0">${empty}</p>`}`;
   return `<div class="topbar"><button class="btn ghost" data-act="home">‹ Accueil</button><h2>Commandes</h2></div>
   <div class="row-btns"><button class="btn primary" data-act="order-new" style="flex:1">Nouvelle commande</button><button class="btn" data-act="go-history" style="flex:1">Historique</button></div>
-  <h3 class="sub">Prêtes à livrer (${ready.length})</h3>
-  ${ready.length ? ready.map(orderCard).join('') : '<p class="hint" style="margin-top:0">Aucune commande prête pour l’instant.</p>'}
-  <h3 class="sub">En attente, à préparer (${pend.length})</h3>
-  ${pend.length ? pend.map(orderCard).join('') : '<div class="empty"><p>Aucune commande en attente.</p></div>'}`;
+  ${due > 0 ? `<div class="totals"><span>Reste à encaisser</span><b>${fmtEuro(due)}</b></div>` : ''}
+  ${done.length ? sec('Livrées, à historiser', done, '') : ''}
+  ${sec('Prêtes à livrer', ready, 'Aucune commande entièrement prête pour l’instant.')}
+  ${sec('À préparer', todo, 'Aucune commande à préparer.')}
+  <p class="hint">Coche « Prête », « Payée » et « Livrée » ligne par ligne. Quand une commande est terminée, « Historiser » la range dans l’historique.</p>`;
 }
 function vOrderEdit(){
   const o = S.odraft, isNew = !findOrder(o.id);
@@ -3340,7 +3358,7 @@ function vHistory(){
   return `<div class="topbar"><button class="btn ghost" data-act="go-orders">‹ Commandes</button><h2>Historique</h2></div>
   <div class="row-btns" style="margin-top:0"><button class="btn primary" data-act="go-profit" style="flex:1">Rentabilité</button></div>
   <div class="tgrid" style="grid-template-columns:1fr 1fr"><label class="lbl">Client<select data-hist="client"><option value="">Tous les clients</option>${cl.map(c => `<option value="${c.id}" ${f.client === c.id ? 'selected' : ''}>${esc(clientName(c))}</option>`).join('')}</select></label>
-  <label class="lbl">État<select data-hist="statut">${[['', 'Tous'], ['attente', 'En attente'], ['prete', 'Prêtes'], ['livree', 'Livrées'], ['annulee', 'Annulées']].map(([k, l]) => `<option value="${k}" ${f.statut === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+  <label class="lbl">État<select data-hist="statut">${[['', 'Toutes'], ['attente', 'En cours'], ['historisee', 'Historisées'], ['annulee', 'Annulées']].map(([k, l]) => `<option value="${k}" ${f.statut === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
   <p class="hint">${plural(list.length, 'commande')}, ${pcs(tot)} (hors annulées).</p>
   ${list.length ? list.map(orderCard).join('') : '<div class="empty"><p>Aucune commande pour ce filtre.</p></div>'}`;
 }
@@ -3368,7 +3386,10 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.se
   await dbInit();
   S.settings = Object.assign({ lire:true, autoMinuteur:true, lireNotes:false, smic:12.31, forfaitH:3 }, load(SKEY, {}));
   S.clients = load(CKEY, []); S.orders = load(OKEY, []); S.prices = load(PKEY, []); S.cooks = load(CLKEY, []);
-  S.orders.forEach(o => { if (o.statut === 'prete' && (o.lignes || []).every(l => !l.prete)) (o.lignes || []).forEach(l => { l.prete = true; l.preteLe = o.preteLe || ''; }); });
+  { let mig = false; S.orders.forEach(o => {
+    if (o.statut === 'prete') { (o.lignes || []).forEach(l => { if (!l.prete) { l.prete = true; l.preteLe = l.preteLe || o.preteLe || ''; } }); o.statut = 'attente'; mig = true; }
+    else if (o.statut === 'livree') { (o.lignes || []).forEach(l => { l.prete = true; l.livree = true; if (l.payee == null) l.payee = true; l.livreeLe = l.livreeLe || o.livreeLe || ''; }); o.statut = 'historisee'; o.historiseeLe = o.livreeLe || ''; mig = true; }
+  }); if (mig) saveOrders(); }
   loadRecipes();
   render();
   initPhoto();
